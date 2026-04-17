@@ -8,6 +8,8 @@ import Income from './pages/Income'
 import Expenses from './pages/Expenses'
 import Documents from './pages/Documents'
 import Fees from './pages/Fees'
+import Nomenclatures from './pages/Nomenclatures'
+import BillingPeriods from './pages/BillingPeriods'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -47,6 +49,8 @@ function AppRoutes() {
         <Route path="expenses" element={<Expenses />} />
         <Route path="documents" element={<Documents />} />
         <Route path="fees" element={<Fees />} />
+        <Route path="nomenclatures" element={<Nomenclatures />} />
+        <Route path="billing-periods" element={<BillingPeriods />} />
       </Route>
     </Routes>
   )

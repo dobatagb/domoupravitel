@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Home, Building2, TrendingUp, TrendingDown, FileText, LogOut, Receipt, CreditCard } from 'lucide-react'
+import { Home, Building2, TrendingUp, TrendingDown, FileText, LogOut, Receipt, CreditCard, Tags, CalendarRange } from 'lucide-react'
 import './Layout.css'
 
 export default function Layout() {
@@ -22,6 +22,8 @@ export default function Layout() {
         { path: '/income', label: 'Приходи', icon: TrendingUp },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/documents', label: 'Документи', icon: FileText },
+        { path: '/nomenclatures', label: 'Номенклатури', icon: Tags },
+        { path: '/billing-periods', label: 'Периоди', icon: CalendarRange },
         ...(userRole === 'admin' ? [{ path: '/fees', label: 'Такси', icon: Receipt }] : []),
       ]
 
@@ -51,7 +53,7 @@ export default function Layout() {
             )
           })}
         </nav>
-        <button className="logout-btn" onClick={signOut}>
+        <button type="button" className="logout-btn" onClick={() => void signOut()}>
           <LogOut size={20} />
           <span>Изход</span>
         </button>

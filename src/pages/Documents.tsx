@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Download, Trash2, FileText, Image as ImageIcon } from 'lucide-react'
 import { format } from 'date-fns'
@@ -50,13 +50,15 @@ export default function Documents() {
 
   const fetchDocuments = async () => {
     try {
-      const { data, error } = await supabase
-        .from('documents')
-        .select(`
+      const { data, error } = await supabaseQuery(() =>
+        supabase
+          .from('documents')
+          .select(`
           *,
           floors:floor_id (floor_number, apartment_number)
         `)
-        .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false })
+      )
 
       if (error) throw error
       setDocuments(data || [])
@@ -88,9 +90,7 @@ export default function Documents() {
       if (uploadError) throw uploadError
 
       // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('documents')
-        .getPublicUrl(filePath)
+      void supabase.storage.from('documents').getPublicUrl(filePath)
 
       // Save document record
       const { error: dbError } = await supabase.from('documents').insert({

@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import { useUnitGroups } from '../hooks/useUnitGroups'
 import './Fees.css'
 
 type FeeType = 'entry_fee' | 'parking_fee' | 'shop_fee'
-type UnitType = 'apartment' | 'garage' | 'shop' | 'parking'
 
 interface Fee {
   id: string
   type: FeeType
   amount: number
   description: string | null
-  unit_type: UnitType | null
+  unit_group_id: string | null
   is_active: boolean
   created_at: string
   updated_at: string
+  unit_group?: { id: string; name: string; code: string } | null
 }
 
 const feeTypeLabels: Record<FeeType, string> = {
@@ -24,15 +25,9 @@ const feeTypeLabels: Record<FeeType, string> = {
   shop_fee: 'Такса за магазин',
 }
 
-const unitTypeLabels: Record<UnitType, string> = {
-  apartment: 'Апартамент',
-  garage: 'Гараж',
-  shop: 'Магазин',
-  parking: 'Паркомясто',
-}
-
 export default function Fees() {
-  const { userRole } = useAuth()
+  const { userRole, loading: authLoading } = useAuth()
+  const { groups } = useUnitGroups()
   const [fees, setFees] = useState<Fee[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -41,26 +36,27 @@ export default function Fees() {
     type: 'entry_fee' as FeeType,
     amount: '',
     description: '',
-    unit_type: 'apartment' as UnitType | '',
+    unit_group_id: '' as string,
     is_active: true,
   })
 
   useEffect(() => {
-    if (userRole === 'admin') {
-      fetchFees()
-    }
+    if (userRole !== 'admin') return
+    void fetchFees()
   }, [userRole])
 
   const fetchFees = async () => {
     try {
-      const { data, error } = await supabase
-        .from('fees')
-        .select('*')
-        .order('type', { ascending: true })
-        .order('unit_type', { ascending: true })
+      const { data, error } = await supabaseQuery(() =>
+        supabase
+          .from('fees')
+          .select('*, unit_group:unit_group_id (id, name, code)')
+          .order('type', { ascending: true })
+          .order('unit_group_id', { ascending: true })
+      )
 
       if (error) throw error
-      setFees(data || [])
+      setFees((data as Fee[]) || [])
     } catch (error) {
       console.error('Error fetching fees:', error)
     } finally {
@@ -71,19 +67,16 @@ export default function Fees() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const feeData: any = {
+      const feeData: Record<string, unknown> = {
         type: formData.type,
         amount: parseFloat(formData.amount),
         description: formData.description || null,
-        unit_type: formData.unit_type || null,
+        unit_group_id: formData.unit_group_id || null,
         is_active: formData.is_active,
       }
 
       if (editingFee) {
-        const { error } = await supabase
-          .from('fees')
-          .update(feeData)
-          .eq('id', editingFee.id)
+        const { error } = await supabase.from('fees').update(feeData).eq('id', editingFee.id)
 
         if (error) throw error
       } else {
@@ -96,8 +89,9 @@ export default function Fees() {
       setEditingFee(null)
       resetForm()
       fetchFees()
-    } catch (error: any) {
-      alert(error.message || 'Грешка при запазване')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Грешка при запазване'
+      alert(msg)
     }
   }
 
@@ -107,7 +101,7 @@ export default function Fees() {
       type: fee.type,
       amount: fee.amount.toString(),
       description: fee.description || '',
-      unit_type: fee.unit_type || '',
+      unit_group_id: fee.unit_group_id || '',
       is_active: fee.is_active,
     })
     setShowModal(true)
@@ -120,8 +114,9 @@ export default function Fees() {
       const { error } = await supabase.from('fees').delete().eq('id', id)
       if (error) throw error
       fetchFees()
-    } catch (error: any) {
-      alert(error.message || 'Грешка при изтриване')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Грешка при изтриване'
+      alert(msg)
     }
   }
 
@@ -134,8 +129,9 @@ export default function Fees() {
 
       if (error) throw error
       fetchFees()
-    } catch (error: any) {
-      alert(error.message || 'Грешка при обновяване')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Грешка при обновяване'
+      alert(msg)
     }
   }
 
@@ -144,7 +140,7 @@ export default function Fees() {
       type: 'entry_fee',
       amount: '',
       description: '',
-      unit_type: 'apartment',
+      unit_group_id: '',
       is_active: true,
     })
   }
@@ -153,6 +149,10 @@ export default function Fees() {
     setEditingFee(null)
     resetForm()
     setShowModal(true)
+  }
+
+  if (authLoading || userRole === null) {
+    return <div>Зареждане...</div>
   }
 
   if (userRole !== 'admin') {
@@ -193,7 +193,7 @@ export default function Fees() {
                 <div>
                   <h3>
                     {feeTypeLabels[fee.type]}
-                    {fee.unit_type && ` - ${unitTypeLabels[fee.unit_type]}`}
+                    {fee.unit_group?.name && ` — ${fee.unit_group.name}`}
                   </h3>
                   <div className="fee-status">
                     {fee.is_active ? (
@@ -217,18 +217,10 @@ export default function Fees() {
                   >
                     {fee.is_active ? <XCircle size={18} /> : <CheckCircle size={18} />}
                   </button>
-                  <button
-                    className="icon-btn"
-                    onClick={() => handleEdit(fee)}
-                    title="Редактирай"
-                  >
+                  <button className="icon-btn" onClick={() => handleEdit(fee)} title="Редактирай">
                     <Edit2 size={18} />
                   </button>
-                  <button
-                    className="icon-btn danger"
-                    onClick={() => handleDelete(fee.id)}
-                    title="Изтрий"
-                  >
+                  <button className="icon-btn danger" onClick={() => handleDelete(fee.id)} title="Изтрий">
                     <Trash2 size={18} />
                   </button>
                 </div>
@@ -270,21 +262,22 @@ export default function Fees() {
               </div>
 
               <div className="form-group">
-                <label>Тип единица</label>
+                <label>Група единици</label>
                 <select
-                  value={formData.unit_type}
-                  onChange={(e) =>
-                    setFormData({ ...formData, unit_type: e.target.value as UnitType | '' })
-                  }
+                  value={formData.unit_group_id}
+                  onChange={(e) => setFormData({ ...formData, unit_group_id: e.target.value })}
                 >
-                  <option value="">Всички типове</option>
-                  <option value="apartment">Апартамент</option>
-                  <option value="garage">Гараж</option>
-                  <option value="shop">Магазин</option>
-                  <option value="parking">Паркомясто</option>
+                  <option value="">Всички групи</option>
+                  {groups
+                    .sort((a, b) => a.name.localeCompare(b.name, 'bg'))
+                    .map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
                 </select>
                 <small className="form-hint">
-                  Оставете празно за всички типове единици (напр. входна такса)
+                  Празно = важи за всички групи (напр. обща входна такса). Иначе избери група от номенклатурата.
                 </small>
               </div>
 
@@ -316,9 +309,7 @@ export default function Fees() {
                   <input
                     type="checkbox"
                     checked={formData.is_active}
-                    onChange={(e) =>
-                      setFormData({ ...formData, is_active: e.target.checked })
-                    }
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                   />
                   <span>Активна такса</span>
                 </label>
@@ -328,11 +319,7 @@ export default function Fees() {
               </div>
 
               <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowModal(false)}
-                >
+                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
                   Отказ
                 </button>
                 <button type="submit" className="btn-primary">
@@ -346,4 +333,3 @@ export default function Fees() {
     </div>
   )
 }
-

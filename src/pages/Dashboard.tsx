@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
 import { Building2, TrendingUp, TrendingDown, FileText } from 'lucide-react'
 import './Dashboard.css'
 
 export default function Dashboard() {
-  const { canEdit } = useAuth()
   const [stats, setStats] = useState({
     totalUnits: 0,
     totalIncome: 0,

@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, Filter } from 'lucide-react'
+import { useUnitGroups } from '../hooks/useUnitGroups'
+import type { UnitGroup } from '../types/unitGroup'
 import './Units.css'
-
-type UnitType = 'apartment' | 'garage' | 'shop' | 'parking'
 
 interface Unit {
   id: string
-  type: UnitType
+  group_id: string
+  type: string
   number: string
-  floor: number | null
   area: number
   owner_name: string
   owner_email: string | null
@@ -18,30 +18,28 @@ interface Unit {
   tenant_name: string | null
   tenant_email: string | null
   tenant_phone: string | null
-  linked_unit_id: string | null
   notes: string | null
+  opening_balance?: number | string | null
   created_at: string
-  linked_unit?: { type: UnitType; number: string }
+  group?: UnitGroup | null
 }
 
-const unitTypeLabels: Record<UnitType, string> = {
-  apartment: 'Апартамент',
-  garage: 'Гараж',
-  shop: 'Магазин',
-  parking: 'Паркомясто',
-}
+const unitSelectFields = `
+          *,
+          group:group_id (*)
+        `
 
 export default function Units() {
-  const { canEdit, refreshUserRoleById, setIgnoreRoleUpdateFlag } = useAuth()
+  const { canEdit } = useAuth()
+  const { groups, loading: groupsLoading, labelForCode } = useUnitGroups()
   const [units, setUnits] = useState<Unit[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
-  const [filterType, setFilterType] = useState<UnitType | 'all'>('all')
+  const [filterGroupId, setFilterGroupId] = useState<string | 'all'>('all')
   const [formData, setFormData] = useState({
-    type: 'apartment' as UnitType,
+    group_id: '',
     number: '',
-    floor: '',
     area: '',
     owner_name: '',
     owner_email: '',
@@ -49,157 +47,70 @@ export default function Units() {
     tenant_name: '',
     tenant_email: '',
     tenant_phone: '',
-    linked_unit_id: '',
     notes: '',
-    user_email: '',
-    user_password: '',
+    opening_balance: '0',
   })
 
   useEffect(() => {
-    fetchUnits()
+    void loadData()
   }, [])
+
+  const pageLoading = loading || groupsLoading
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const { data, error } = await supabaseQuery(() =>
+        supabase
+          .from('units')
+          .select(unitSelectFields)
+          .order('type', { ascending: true })
+          .order('number', { ascending: true })
+      )
+      if (error) throw error
+      setUnits(data || [])
+    } catch (error) {
+      console.error('Error loading units:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const fetchUnits = async () => {
     try {
-      const { data, error } = await supabase
-        .from('units')
-        .select(`
-          *,
-          linked_unit:linked_unit_id (type, number)
-        `)
-        .order('type', { ascending: true })
-        .order('number', { ascending: true })
-
+      const { data, error } = await supabaseQuery(() =>
+        supabase
+          .from('units')
+          .select(unitSelectFields)
+          .order('type', { ascending: true })
+          .order('number', { ascending: true })
+      )
       if (error) throw error
       setUnits(data || [])
     } catch (error) {
       console.error('Error fetching units:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      let userId: string | null = null
-
-      // Ако се добавя нова единица и има email/password, създаваме user
-      if (!editingUnit && formData.user_email && formData.user_password) {
-        try {
-          // Запазване на текущата сесия на администратора ПРЕДИ signUp
-          const { data: currentSession } = await supabase.auth.getSession()
-          const adminSession = currentSession?.session
-          
-          if (!adminSession) {
-            throw new Error('Няма активна сесия на администратор')
-          }
-
-          // Активиране на флаг за игнориране на обновяване на ролята
-          // Това предотвратява onAuthStateChange да обнови ролята на viewer
-          setIgnoreRoleUpdateFlag(true)
-
-          // Създаване на потребител чрез обикновена регистрация
-          // signUp автоматично логва новия потребител, затова трябва веднага да се върнем
-          const { data: authData, error: authError } = await supabase.auth.signUp({
-            email: formData.user_email,
-            password: formData.user_password,
-            options: {
-              emailRedirectTo: window.location.origin,
-            },
-          })
-
-          if (authError) {
-            setIgnoreRoleUpdateFlag(false)
-            throw authError
-          }
-          if (!authData.user) {
-            setIgnoreRoleUpdateFlag(false)
-            throw new Error('Неуспешно създаване на потребител')
-          }
-
-          userId = authData.user.id
-
-          // Обновяване на ролята в users таблицата (trigger създава viewer по подразбиране)
-          const { error: userError } = await supabase
-            .from('users')
-            .update({ role: 'viewer', email: formData.user_email })
-            .eq('id', userId)
-
-          if (userError) {
-            console.warn('Error updating user role:', userError)
-          }
-
-          // ВЕДНАГА връщане към сесията на администратора БЕЗ забавяне
-          const { error: setSessionError } = await supabase.auth.setSession({
-            access_token: adminSession.access_token,
-            refresh_token: adminSession.refresh_token,
-          })
-
-          if (setSessionError) {
-            setIgnoreRoleUpdateFlag(false)
-            console.error('Error restoring admin session:', setSessionError)
-            await supabase.auth.signOut()
-            alert('Единицата е създадена успешно, но трябва да влезете отново като администратор.')
-            window.location.reload()
-            return
-          }
-
-          // Възстановяване на ролята на администратора
-          // Изчакваме малко за да се обнови сесията преди да обновим ролята
-          await new Promise(resolve => setTimeout(resolve, 300))
-          
-          // Проверяваме дали сесията е на администратора
-          const { data: restoredSession } = await supabase.auth.getSession()
-          if (restoredSession?.session?.user?.id === adminSession.user.id) {
-            // Сесията е на администратора - обновяваме ролята ДИРЕКТНО
-            // Вземаме ролята директно от базата данни за да избегнем проблеми с state-а
-            const { data: roleData } = await supabase
-              .from('users')
-              .select('role')
-              .eq('id', adminSession.user.id)
-              .maybeSingle()
-            
-            if (roleData?.role === 'admin') {
-              // Обновяваме ролята директно чрез refreshUserRoleById
-              // Тази функция не задава default 'viewer', така че няма проблем
-              await refreshUserRoleById(adminSession.user.id)
-              
-              // Изчакваме малко за да се обнови ролята в state-а
-              await new Promise(resolve => setTimeout(resolve, 300))
-              
-              // СЕГА деактивираме флага - след като ролята е обновена
-              setIgnoreRoleUpdateFlag(false)
-            } else {
-              console.warn('Admin role not found or incorrect, role:', roleData?.role)
-              // Все пак опитваме се да обновим ролята
-              await refreshUserRoleById(adminSession.user.id)
-              await new Promise(resolve => setTimeout(resolve, 300))
-              setIgnoreRoleUpdateFlag(false)
-            }
-          } else {
-            console.warn('Session not restored to admin, forcing refresh')
-            // Ако не, опитваме се отново
-            await supabase.auth.setSession({
-              access_token: adminSession.access_token,
-              refresh_token: adminSession.refresh_token,
-            })
-            await new Promise(resolve => setTimeout(resolve, 300))
-            
-            // Обновяваме ролята преди да деактивираме флага
-            await refreshUserRoleById(adminSession.user.id)
-            await new Promise(resolve => setTimeout(resolve, 500))
-            setIgnoreRoleUpdateFlag(false)
-          }
-        } catch (userCreationError: any) {
-          // Ако създаването на потребител не успее, все пак създаваме единицата
-          console.error('Error creating user:', userCreationError)
-          alert(`Единицата е създадена, но създаването на потребителски акаунт не бе успешно: ${userCreationError.message}`)
-        }
+      const selectedGroup = groups.find((g) => g.id === formData.group_id)
+      if (!selectedGroup) {
+        alert('Изберете група обект.')
+        return
       }
 
-      const unitData: any = {
-        type: formData.type,
+      const obRaw = formData.opening_balance.trim().replace(',', '.')
+      const openingBalance = obRaw === '' ? 0 : parseFloat(obRaw)
+      if (Number.isNaN(openingBalance) || openingBalance < 0) {
+        alert('Пренесеният дълг трябва да е число ≥ 0.')
+        return
+      }
+
+      const unitData: Record<string, unknown> = {
+        group_id: formData.group_id,
+        type: selectedGroup.code,
         number: formData.number,
         area: parseFloat(formData.area),
         owner_name: formData.owner_name,
@@ -208,18 +119,8 @@ export default function Units() {
         tenant_name: formData.tenant_name || null,
         tenant_email: formData.tenant_email || null,
         tenant_phone: formData.tenant_phone || null,
-        linked_unit_id: formData.linked_unit_id || null,
         notes: formData.notes || null,
-      }
-
-      // Добавяме user_id само ако е създаден нов потребител
-      if (userId) {
-        unitData.user_id = userId
-      }
-
-      // Добавяме floor само за апартаменти
-      if (formData.type === 'apartment' && formData.floor) {
-        unitData.floor = parseInt(formData.floor)
+        opening_balance: openingBalance,
       }
 
       if (editingUnit) {
@@ -246,17 +147,17 @@ export default function Units() {
       setEditingUnit(null)
       resetForm()
       fetchUnits()
-    } catch (error: any) {
-      alert(error.message || 'Грешка при запазване')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Грешка при запазване'
+      alert(msg)
     }
   }
 
   const handleEdit = (unit: Unit) => {
     setEditingUnit(unit)
     setFormData({
-      type: unit.type,
+      group_id: unit.group_id,
       number: unit.number,
-      floor: unit.floor?.toString() || '',
       area: unit.area.toString(),
       owner_name: unit.owner_name,
       owner_email: unit.owner_email || '',
@@ -264,10 +165,11 @@ export default function Units() {
       tenant_name: unit.tenant_name || '',
       tenant_email: unit.tenant_email || '',
       tenant_phone: unit.tenant_phone || '',
-      linked_unit_id: unit.linked_unit_id || '',
       notes: unit.notes || '',
-      user_email: '',
-      user_password: '',
+      opening_balance:
+        unit.opening_balance != null && unit.opening_balance !== ''
+          ? String(unit.opening_balance)
+          : '0',
     })
     setShowModal(true)
   }
@@ -279,16 +181,19 @@ export default function Units() {
       const { error } = await supabase.from('units').delete().eq('id', id)
       if (error) throw error
       fetchUnits()
-    } catch (error: any) {
-      alert(error.message || 'Грешка при изтриване')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Грешка при изтриване'
+      alert(msg)
     }
   }
 
+  const sortedGroups = [...groups].sort((a, b) => a.name.localeCompare(b.name, 'bg'))
+
   const resetForm = () => {
+    const defaultGroupId = sortedGroups[0]?.id ?? ''
     setFormData({
-      type: 'apartment',
+      group_id: defaultGroupId,
       number: '',
-      floor: '',
       area: '',
       owner_name: '',
       owner_email: '',
@@ -296,10 +201,8 @@ export default function Units() {
       tenant_name: '',
       tenant_email: '',
       tenant_phone: '',
-      linked_unit_id: '',
       notes: '',
-      user_email: '',
-      user_password: '',
+      opening_balance: '0',
     })
   }
 
@@ -309,19 +212,10 @@ export default function Units() {
     setShowModal(true)
   }
 
-  const filteredUnits = filterType === 'all' 
-    ? units 
-    : units.filter(unit => unit.type === filterType)
+  const filteredUnits =
+    filterGroupId === 'all' ? units : units.filter((unit) => unit.group_id === filterGroupId)
 
-  // Вземане на единици за свързване (само апартаменти за паркоместа и гаражи)
-  const getLinkableUnits = () => {
-    if (formData.type === 'parking' || formData.type === 'garage') {
-      return units.filter(u => u.type === 'apartment')
-    }
-    return []
-  }
-
-  if (loading) {
+  if (pageLoading) {
     return <div>Зареждане...</div>
   }
 
@@ -344,15 +238,16 @@ export default function Units() {
         <div className="filter-group">
           <Filter size={18} />
           <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value as UnitType | 'all')}
+            value={filterGroupId}
+            onChange={(e) => setFilterGroupId(e.target.value as string | 'all')}
             className="filter-select"
           >
-            <option value="all">Всички типове</option>
-            <option value="apartment">Апартаменти</option>
-            <option value="garage">Гаражи</option>
-            <option value="shop">Магазини</option>
-            <option value="parking">Паркоместа</option>
+            <option value="all">Всички групи</option>
+            {sortedGroups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
           </select>
         </div>
         <div className="units-count">
@@ -364,19 +259,18 @@ export default function Units() {
         {filteredUnits.length === 0 ? (
           <div className="empty-state">Няма регистрирани единици</div>
         ) : (
-          filteredUnits.map((unit) => (
+          filteredUnits.map((unit) => {
+            const openingBal =
+              unit.opening_balance != null && unit.opening_balance !== ''
+                ? Number(unit.opening_balance)
+                : 0
+            return (
             <div key={unit.id} className="unit-card">
               <div className="unit-header">
                 <div>
                   <h3>
-                    {unitTypeLabels[unit.type]} {unit.number}
-                    {unit.type === 'apartment' && unit.floor && ` (Етаж ${unit.floor})`}
+                    {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
                   </h3>
-                  {unit.linked_unit && (
-                    <div className="linked-unit-badge">
-                      Свързано с: {unitTypeLabels[unit.linked_unit.type]} {unit.linked_unit.number}
-                    </div>
-                  )}
                 </div>
                 {canEdit() && (
                   <div className="unit-actions">
@@ -430,9 +324,16 @@ export default function Units() {
                     <span className="detail-value">{unit.tenant_email}</span>
                   </div>
                 )}
+                {openingBal > 0 && (
+                  <div className="detail-item">
+                    <span className="detail-label">Пренесен дълг:</span>
+                    <span className="detail-value">{openingBal.toFixed(2)} лв</span>
+                  </div>
+                )}
               </div>
             </div>
-          ))
+            )
+          })
         )}
       </div>
 
@@ -442,19 +343,21 @@ export default function Units() {
             <h2>{editingUnit ? 'Редактирай единица' : 'Добави единица'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label>Тип единица *</label>
+                <label>Група обект *</label>
                 <select
-                  value={formData.type}
+                  value={formData.group_id}
                   onChange={(e) => {
-                    setFormData({ ...formData, type: e.target.value as UnitType, floor: '' })
+                    setFormData({ ...formData, group_id: e.target.value })
                   }}
                   required
                   disabled={!!editingUnit}
                 >
-                  <option value="apartment">Апартамент</option>
-                  <option value="garage">Гараж</option>
-                  <option value="shop">Магазин</option>
-                  <option value="parking">Паркомясто</option>
+                  <option value="">Изберете…</option>
+                  {sortedGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -470,20 +373,6 @@ export default function Units() {
                   placeholder="Напр. 5, 12, A1"
                 />
               </div>
-
-              {formData.type === 'apartment' && (
-                <div className="form-group">
-                  <label>Етаж</label>
-                  <input
-                    type="number"
-                    value={formData.floor}
-                    onChange={(e) =>
-                      setFormData({ ...formData, floor: e.target.value })
-                    }
-                    placeholder="Напр. 1, 2, 3"
-                  />
-                </div>
-              )}
 
               <div className="form-group">
                 <label>Площ (м²) *</label>
@@ -568,26 +457,6 @@ export default function Units() {
                 </div>
               </div>
 
-              {(formData.type === 'parking' || formData.type === 'garage') && (
-                <div className="form-group">
-                  <label>Свързано с апартамент (опционално)</label>
-                  <select
-                    value={formData.linked_unit_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, linked_unit_id: e.target.value })
-                    }
-                  >
-                    <option value="">Не е свързано</option>
-                    {getLinkableUnits().map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        Апартамент {unit.number}
-                        {unit.floor && ` (Етаж ${unit.floor})`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               <div className="form-group">
                 <label>Бележки</label>
                 <textarea
@@ -599,37 +468,25 @@ export default function Units() {
                 />
               </div>
 
-              {!editingUnit && formData.type === 'apartment' && (
-                <div className="form-section">
-                  <h3>Потребителски акаунт (опционално)</h3>
-                  <p className="form-hint">
-                    Ако попълните email и парола, ще се създаде автоматично потребителски акаунт за този апартамент.
-                  </p>
-                  <div className="form-group">
-                    <label>Имейл за вход</label>
-                    <input
-                      type="email"
-                      value={formData.user_email}
-                      onChange={(e) =>
-                        setFormData({ ...formData, user_email: e.target.value })
-                      }
-                      placeholder="user@example.com"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Парола</label>
-                    <input
-                      type="password"
-                      value={formData.user_password}
-                      onChange={(e) =>
-                        setFormData({ ...formData, user_password: e.target.value })
-                      }
-                      placeholder="Минимум 6 символа"
-                      minLength={6}
-                    />
-                  </div>
+              <div className="form-section">
+                <h3>Задължения</h3>
+                <div className="form-group">
+                  <label>Пренесен дълг (лв)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.opening_balance}
+                    onChange={(e) =>
+                      setFormData({ ...formData, opening_balance: e.target.value })
+                    }
+                    placeholder="0"
+                  />
+                  <small className="form-hint">
+                    Сума, която едницата дължи извън текущото таксуване по периоди (напр. стари задължения). Намаляваш
+                    ръчно, когато погасиш част от нея.
+                  </small>
                 </div>
-              )}
+              </div>
 
               <div className="modal-actions">
                 <button
@@ -650,4 +507,3 @@ export default function Units() {
     </div>
   )
 }
-

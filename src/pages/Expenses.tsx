@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, Calculator, CheckCircle2 } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
+import { compactGroupLabel } from '../lib/unitDisplay'
 import './Expenses.css'
 
 type DistributionMethod = 'equal' | 'by_area' | 'manual'
@@ -14,6 +15,7 @@ interface Unit {
   number: string
   area: number
   owner_name: string
+  group?: { name: string; list_label_short: string | null; code: string } | null
 }
 
 interface ExpenseDistribution {
@@ -89,18 +91,20 @@ export default function Expenses() {
 
   const fetchExpenses = async () => {
     try {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select(`
+      const { data, error } = await supabaseQuery(() =>
+        supabase
+          .from('expenses')
+          .select(`
           *,
           distributions:expense_distributions (
             id,
             unit_id,
             amount,
-            units:unit_id (id, type, number, area, owner_name)
+            units:unit_id (id, type, number, area, owner_name, group:group_id (name, list_label_short, code))
           )
         `)
-        .order('date', { ascending: false })
+          .order('date', { ascending: false })
+      )
 
       if (error) throw error
       
@@ -284,13 +288,7 @@ export default function Expenses() {
   }
 
   const getUnitDisplay = (unit: Unit) => {
-    const typeLabels: Record<string, string> = {
-      apartment: 'Ап.',
-      garage: 'Гар.',
-      shop: 'Маг.',
-      parking: 'Парк.',
-    }
-    return `${typeLabels[unit.type] || unit.type} ${unit.number}`
+    return `${compactGroupLabel(unit.group, unit.type)} ${unit.number}`
   }
 
   const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0)
@@ -365,10 +363,10 @@ export default function Expenses() {
                   </td>
                   <td>{distributionMethodLabels[expense.distribution_method]}</td>
                   <td>
-                    {expense.distributions_count > 0 ? (
+                    {(expense.distributions_count ?? 0) > 0 ? (
                       <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <CheckCircle2 size={16} />
-                        {expense.distributions_count} единици
+                        {expense.distributions_count ?? 0} единици
                       </span>
                     ) : (
                       <span style={{ color: '#ef4444' }}>Неразпределено</span>

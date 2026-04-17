@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
+import { compactGroupLabel } from '../lib/unitDisplay'
 import './Income.css'
 
 type IncomeType = 'entry_fee' | 'parking_fee' | 'other'
@@ -14,6 +15,7 @@ interface Unit {
   number: string
   area: number
   owner_name: string
+  group?: { name: string; list_label_short: string | null; code: string } | null
 }
 
 interface Income {
@@ -61,10 +63,10 @@ export default function Income() {
     try {
       const { data } = await supabase
         .from('units')
-        .select('id, type, number, area, owner_name')
+        .select('id, type, number, area, owner_name, group:group_id (name, list_label_short, code)')
         .order('type')
         .order('number')
-      setUnits(data || [])
+      setUnits((data as unknown as Unit[]) || [])
     } catch (error) {
       console.error('Error fetching units:', error)
     }
@@ -72,13 +74,15 @@ export default function Income() {
 
   const fetchIncomes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('income')
-        .select(`
+      const { data, error } = await supabaseQuery(() =>
+        supabase
+          .from('income')
+          .select(`
           *,
           units:unit_id (id, type, number, area, owner_name)
         `)
-        .order('date', { ascending: false })
+          .order('date', { ascending: false })
+      )
 
       if (error) throw error
       setIncomes(data || [])
@@ -195,13 +199,7 @@ export default function Income() {
 
   const getUnitDisplay = (unit: Unit | undefined) => {
     if (!unit) return '-'
-    const typeLabels: Record<string, string> = {
-      apartment: 'Ап.',
-      garage: 'Гар.',
-      shop: 'Маг.',
-      parking: 'Парк.',
-    }
-    return `${typeLabels[unit.type] || unit.type} ${unit.number}`
+    return `${compactGroupLabel(unit.group, unit.type)} ${unit.number}`
   }
 
   if (loading) {

@@ -30,6 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const ignoreRoleUpdateRef = useRef(false)
   const userRoleRef = useRef<UserRole | null>(null)
   const userRef = useRef<User | null>(null)
+  /** Игнорира остарели отговори при паралелни извиквания на fetchUserRole */
+  const fetchUserRoleSeq = useRef(0)
   
   // Обновяваме refs когато state-а се променя
   useEffect(() => {
@@ -45,103 +47,130 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user])
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session:', session?.user?.email)
-      setSession(session)
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchUserRole(session.user.id).catch(err => {
-          console.error('Failed to fetch user role:', err)
-          setUserRole('viewer')
-          setLoading(false)
-        })
-      } else {
+    let isActive = true
+
+    /** Само ако нито getSession, нито onAuthStateChange не приключат (много рядко) */
+    const SAFETY_MS = 45_000
+
+    const safetyTimer = window.setTimeout(() => {
+      if (isActive) {
+        console.warn('[Auth] Няма отговор от Supabase Auth — махаме спинера; провери мрежата и .env ключовете.')
         setLoading(false)
       }
-    }).catch(err => {
-      console.error('Failed to get session:', err)
-      setLoading(false)
-    })
+    }, SAFETY_MS)
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email)
-      
-      // Ако ignoreRoleUpdate е true, не обновяваме state-а и ролята
-      // Това се използва когато създаваме нов потребител и се опитваме да се върнем към администратора
-      if (ignoreRoleUpdateRef.current) {
-        console.log('Ignoring auth state change due to ignoreRoleUpdate flag')
-        return
-      }
-      
-      // Ако ролята вече е 'admin' и сесията е на същия потребител, не обновяваме ролята
-      // Това предотвратява случайно обновяване на ролята след създаване на нов потребител
-      if (userRoleRef.current === 'admin' && session?.user?.id === userRef.current?.id) {
-        console.log('User is already admin, skipping role update')
+    const clearInitSafety = () => {
+      window.clearTimeout(safetyTimer)
+    }
+
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!isActive) return
+        console.log('Initial session:', session?.user?.email)
         setSession(session)
         setUser(session?.user ?? null)
-        return
-      }
-      
-      setSession(session)
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        try {
-          await fetchUserRole(session.user.id)
-        } catch (err) {
-          console.error('Error in fetchUserRole during auth change:', err)
-          setUserRole('viewer')
+        if (session?.user) {
+          void fetchUserRole(session.user.id).catch((err) => {
+            console.error('Failed to fetch user role:', err)
+            if (!isActive) return
+            setUserRole('viewer')
+          })
+        } else {
+          setUserRole(null)
+        }
+        // Винаги махаме спинера след като сесията е известна (ролята може да дойде малко след това)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error('Failed to get session:', err)
+        if (isActive) setLoading(false)
+      })
+      .finally(() => {
+        if (isActive) clearInitSafety()
+      })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isActive) return
+
+      try {
+        console.log('Auth state changed:', event, session?.user?.email)
+
+        if (ignoreRoleUpdateRef.current && session?.user) {
+          console.log('Ignoring auth state change due to ignoreRoleUpdate flag')
+          return
+        }
+
+        if (userRoleRef.current === 'admin' && session?.user?.id === userRef.current?.id) {
+          console.log('User is already admin, skipping role update')
+          setSession(session)
+          setUser(session?.user ?? null)
+          return
+        }
+
+        setSession(session)
+        setUser(session?.user ?? null)
+        if (session?.user) {
+          // Без await — ако заявката към public.users зависне, да не блокираме finally и „Зареждане...“
+          void fetchUserRole(session.user.id).catch((err) => {
+            console.error('Error in fetchUserRole during auth change:', err)
+            if (isActive) setUserRole('viewer')
+          })
+        } else {
+          setUserRole(null)
+        }
+      } finally {
+        if (isActive) {
+          clearInitSafety()
           setLoading(false)
         }
-      } else {
-        setUserRole(null)
-        setLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isActive = false
+      clearInitSafety()
+      subscription.unsubscribe()
+    }
   }, [])
 
   const fetchUserRole = async (userId: string) => {
     console.log('Fetching user role for:', userId)
-    
-    // Set loading to false immediately to prevent infinite loading
-    // We'll update the role asynchronously
+    const seq = ++fetchUserRoleSeq.current
     setLoading(false)
-    setUserRole('viewer') // Default role
-    
+
     try {
-      // Try to fetch user role with a shorter timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 3000)
-      )
-      
-      const queryPromise = supabase
+      const { data, error } = await supabase
         .from('users')
         .select('role')
         .eq('id', userId)
         .maybeSingle()
 
-      const result = await Promise.race([queryPromise, timeoutPromise]) as any
-      
-      if (result && result.data) {
-        console.log('User role found:', result.data.role)
-        setUserRole(result.data.role || 'viewer')
-      } else if (result && result.error) {
-        console.warn('Error fetching role, using default:', result.error.message)
-      } else {
-        console.warn('User record not found, using default role')
+      if (seq !== fetchUserRoleSeq.current) return
+
+      if (error) {
+        console.warn('Error fetching role:', error.message)
+        setUserRole('viewer')
+        return
       }
-    } catch (error: any) {
-      if (error.message === 'Timeout') {
-        console.warn('Timeout fetching user role, using default role')
+
+      const role = data?.role as UserRole | undefined
+      if (role === 'admin' || role === 'editor' || role === 'viewer') {
+        console.log('User role found:', role)
+        setUserRole(role)
+      } else if (role) {
+        console.warn('Unknown role value, defaulting to viewer:', role)
+        setUserRole('viewer')
       } else {
-        console.error('Exception in fetchUserRole:', error)
+        console.warn('User record not found in public.users, using viewer')
+        setUserRole('viewer')
       }
-      // Already set to viewer and loading to false above
+    } catch (error: unknown) {
+      if (seq !== fetchUserRoleSeq.current) return
+      console.error('Exception in fetchUserRole:', error)
+      setUserRole('viewer')
     }
   }
 
@@ -216,9 +245,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
-    setUserRole(null)
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+    } finally {
+      fetchUserRoleSeq.current += 1
+      setSession(null)
+      setUser(null)
+      setUserRole(null)
+      setLoading(false)
+    }
   }
 
   const canEdit = () => {

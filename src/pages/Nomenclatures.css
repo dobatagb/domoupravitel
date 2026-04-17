@@ -1,0 +1,112 @@
+.nomenclatures-page {
+  animation: fadeIn 0.3s;
+}
+
+.nomenclatures-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.nomenclatures-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-light);
+}
+
+.nomenclatures-page .page-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.page-header-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.nomenclatures-card {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow);
+  overflow: auto;
+}
+
+.nomenclatures-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.nomenclatures-table th,
+.nomenclatures-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.nomenclatures-table th {
+  font-weight: 600;
+  color: var(--text-light);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.code-cell {
+  font-size: 0.8125rem;
+  background: rgba(37, 99, 235, 0.08);
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.nom-input {
+  width: 100%;
+  max-width: 16rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: inherit;
+}
+
+.nom-input-narrow {
+  max-width: 5rem;
+}
+
+.nom-input-short {
+  max-width: 6rem;
+}
+
+.nom-input-fee {
+  max-width: 7rem;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-small {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.nomenclatures-page .checkbox-row .checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.nomenclatures-page .checkbox-row input[type='checkbox'] {
+  width: auto;
+  margin-top: 0.2rem;
+}
