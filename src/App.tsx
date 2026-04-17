@@ -4,7 +4,6 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Units from './pages/Units'
 import Obligations from './pages/Obligations'
-import Income from './pages/Income'
 import Expenses from './pages/Expenses'
 import Documents from './pages/Documents'
 import Nomenclatures from './pages/Nomenclatures'
@@ -45,7 +44,6 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="units" element={<Units />} />
         <Route path="obligations" element={<Obligations />} />
-        <Route path="income" element={<Income />} />
         <Route path="expenses" element={<Expenses />} />
         <Route path="documents" element={<Documents />} />
         <Route path="nomenclatures" element={<Nomenclatures />} />

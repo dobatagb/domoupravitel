@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { CalendarRange, Plus, Edit2, Trash2 } from 'lucide-react'
+import { CalendarRange, Plus, Edit2, Trash2, Copy } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import type { UnitGroup } from '../types/unitGroup'
@@ -45,6 +45,7 @@ export default function BillingPeriods() {
     sort_order: '0',
   })
   const [savingPeriod, setSavingPeriod] = useState(false)
+  const [copyingPeriodId, setCopyingPeriodId] = useState<string | null>(null)
 
   const loadGroups = useCallback(async () => {
     const { data, error } = await supabaseQuery(() =>
@@ -174,9 +175,69 @@ export default function BillingPeriods() {
     }
   }
 
+  const copyPeriod = async (p: BillingPeriod) => {
+    if (!canEdit()) return
+    setCopyingPeriodId(p.id)
+    try {
+      const nextSort = periods.length ? Math.max(...periods.map((x) => x.sort_order)) + 10 : 10
+      const { data: inserted, error: insErr } = await supabase
+        .from('billing_periods')
+        .insert({
+          name: `${p.name} (копие)`,
+          date_from: p.date_from.slice(0, 10),
+          date_to: p.date_to.slice(0, 10),
+          is_closed: false,
+          sort_order: nextSort,
+          updated_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single()
+      if (insErr) throw insErr
+      const newId = inserted.id as string
+
+      const { data: amounts, error: amtErr } = await supabase
+        .from('period_group_amounts')
+        .select('group_id, amount')
+        .eq('period_id', p.id)
+      if (amtErr) throw amtErr
+
+      const now = new Date().toISOString()
+      if (amounts && amounts.length > 0) {
+        const rows = amounts.map((row: { group_id: string; amount: number }) => ({
+          period_id: newId,
+          group_id: row.group_id,
+          amount: row.amount,
+          updated_at: now,
+        }))
+        const { error: upErr } = await supabase.from('period_group_amounts').upsert(rows, {
+          onConflict: 'period_id,group_id',
+        })
+        if (upErr) throw upErr
+      }
+
+      const { error: syncErr } = await supabase.rpc('sync_unit_obligations_for_period', {
+        p_period_id: newId,
+      })
+      if (syncErr) throw syncErr
+
+      await loadPeriods()
+      setSelectedPeriodId(newId)
+    } catch (err: unknown) {
+      console.error(err)
+      alert(err instanceof Error ? err.message : 'Грешка при копиране')
+    } finally {
+      setCopyingPeriodId(null)
+    }
+  }
+
   const deletePeriod = async (p: BillingPeriod) => {
     if (!canEdit()) return
-    if (!confirm(`Изтриване на период „${p.name}“? Сумите по групи за този период също ще се изтрият.`)) return
+    if (
+      !confirm(
+        `Изтриване на период „${p.name}“? Ще се изтрият сумите по групи, задълженията по единици за този период и приспаданията към тях. Записите за плащания остават, но без разпределение към този период.`
+      )
+    )
+      return
     try {
       const { error } = await supabase.from('billing_periods').delete().eq('id', p.id)
       if (error) throw error
@@ -207,7 +268,13 @@ export default function BillingPeriods() {
         onConflict: 'period_id,group_id',
       })
       if (error) throw error
-      alert('Записано.')
+
+      const { error: syncError } = await supabase.rpc('sync_unit_obligations_for_period', {
+        p_period_id: selectedPeriodId,
+      })
+      if (syncError) throw syncError
+
+      alert('Записано. Задълженията по единици са синхронизирани.')
     } catch (err: unknown) {
       console.error(err)
       alert(err instanceof Error ? err.message : 'Грешка при запис на суми')
@@ -279,10 +346,31 @@ export default function BillingPeriods() {
                     <td>{p.is_closed ? 'Затворен' : 'Отворен'}</td>
                     {canEdit() && (
                       <td className="actions-cell">
-                        <button type="button" className="icon-btn" title="Редактирай" onClick={() => openEditPeriod(p)}>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Копирай"
+                          disabled={copyingPeriodId !== null}
+                          onClick={() => void copyPeriod(p)}
+                        >
+                          <Copy size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Редактирай"
+                          disabled={copyingPeriodId !== null}
+                          onClick={() => openEditPeriod(p)}
+                        >
                           <Edit2 size={18} />
                         </button>
-                        <button type="button" className="icon-btn danger" title="Изтрий" onClick={() => void deletePeriod(p)}>
+                        <button
+                          type="button"
+                          className="icon-btn danger"
+                          title="Изтрий"
+                          disabled={copyingPeriodId !== null}
+                          onClick={() => void deletePeriod(p)}
+                        >
                           <Trash2 size={18} />
                         </button>
                       </td>

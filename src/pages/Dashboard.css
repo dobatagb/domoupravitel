@@ -97,6 +97,74 @@
   font-size: 0.875rem;
 }
 
+.balance-breakdown {
+  color: var(--text-light);
+  font-size: 0.8125rem;
+  margin: 0 0 0.75rem;
+  line-height: 1.4;
+}
+
+.dashboard-cash-panel {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.dashboard-cash-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-cash-head h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.dashboard-cash-icon {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.dashboard-cash-hint {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: var(--text-light);
+  line-height: 1.45;
+}
+
+.dashboard-cash-form label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.dashboard-cash-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.dashboard-cash-row input {
+  max-width: 200px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+.dashboard-cash-readonly {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

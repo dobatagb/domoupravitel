@@ -350,7 +350,6 @@ export default function Units() {
                     setFormData({ ...formData, group_id: e.target.value })
                   }}
                   required
-                  disabled={!!editingUnit}
                 >
                   <option value="">Изберете…</option>
                   {sortedGroups.map((g) => (

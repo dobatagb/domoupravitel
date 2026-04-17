@@ -299,7 +299,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_period ON payments(period_start, period_
 CREATE TABLE IF NOT EXISTS unit_obligations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   unit_id UUID NOT NULL REFERENCES units(id) ON DELETE CASCADE,
-  billing_period_id UUID REFERENCES billing_periods(id) ON DELETE SET NULL,
+  billing_period_id UUID REFERENCES billing_periods(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK (kind IN ('regular', 'extraordinary')),
   title TEXT NOT NULL,
   amount_original NUMERIC(12, 2) NOT NULL CHECK (amount_original >= 0),
@@ -314,7 +314,7 @@ CREATE INDEX IF NOT EXISTS idx_unit_obligations_unit ON unit_obligations (unit_i
 CREATE TABLE IF NOT EXISTS payment_allocations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
-  unit_obligation_id UUID NOT NULL REFERENCES unit_obligations(id) ON DELETE RESTRICT,
+  unit_obligation_id UUID NOT NULL REFERENCES unit_obligations(id) ON DELETE CASCADE,
   amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0)
 );
 
@@ -365,6 +365,17 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_related ON documents(related_type, related_id);
+
+-- ============================================
+-- 8.1 НАСТРОЙКИ ПРИЛОЖЕНИЕ (един ред, виж migration 017)
+-- ============================================
+CREATE TABLE IF NOT EXISTS app_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  cash_opening_balance NUMERIC(20, 2) NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO app_settings (id, cash_opening_balance) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
 
 -- ============================================
 -- 9. ROW LEVEL SECURITY (RLS) ПОЛИТИКИ
@@ -845,6 +856,22 @@ CREATE POLICY "payment_allocations_select_scope"
   );
 CREATE POLICY "payment_allocations_editors_all"
   ON payment_allocations FOR ALL
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')))
+  WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
+
+-- App settings (начална каса)
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "app_settings_select_all" ON app_settings;
+DROP POLICY IF EXISTS "app_settings_insert_editors" ON app_settings;
+DROP POLICY IF EXISTS "app_settings_update_editors" ON app_settings;
+CREATE POLICY "app_settings_select_all"
+  ON app_settings FOR SELECT
+  USING (true);
+CREATE POLICY "app_settings_insert_editors"
+  ON app_settings FOR INSERT
+  WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
+CREATE POLICY "app_settings_update_editors"
+  ON app_settings FOR UPDATE
   USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')))
   WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
 

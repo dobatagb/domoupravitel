@@ -1,49 +1,61 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import { Building2, TrendingUp, TrendingDown, FileText } from 'lucide-react'
+import { supabase, supabaseQuery } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
+import { Building2, TrendingUp, TrendingDown, FileText, Wallet } from 'lucide-react'
 import './Dashboard.css'
 
 export default function Dashboard() {
+  const { canEdit } = useAuth()
   const [stats, setStats] = useState({
     totalUnits: 0,
-    totalIncome: 0,
+    /** Сума от плащания (payments), статус „платено“ — постъпили в касата от Задължения */
+    totalPayments: 0,
     totalExpenses: 0,
     totalDocuments: 0,
   })
+  const [cashOpening, setCashOpening] = useState(0)
+  const [cashDraft, setCashDraft] = useState('')
+  const [cashSaving, setCashSaving] = useState(false)
 
   useEffect(() => {
-    fetchStats()
+    void fetchStats()
   }, [])
 
   const fetchStats = async () => {
     try {
-      // Fetch units count
       const { count: unitsCount } = await supabase
         .from('units')
         .select('*', { count: 'exact', head: true })
 
-      // Fetch total income
-      const { data: incomeData } = await supabase
-        .from('income')
-        .select('amount')
+      const { data: paymentsData } = await supabase.from('payments').select('amount').eq('status', 'paid')
+      const totalPayments =
+        paymentsData?.reduce((sum, item) => sum + (Number(item.amount) || 0), 0) || 0
 
-      const totalIncome = incomeData?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0
-
-      // Fetch total expenses
-      const { data: expensesData } = await supabase
-        .from('expenses')
-        .select('amount')
-
+      const { data: expensesData } = await supabase.from('expenses').select('amount')
       const totalExpenses = expensesData?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0
 
-      // Fetch documents count
       const { count: docsCount } = await supabase
         .from('documents')
         .select('*', { count: 'exact', head: true })
 
+      let opening = 0
+      try {
+        const { data: settings, error } = await supabaseQuery(() =>
+          supabase.from('app_settings').select('cash_opening_balance').eq('id', 1).maybeSingle()
+        )
+        if (!error && settings && settings.cash_opening_balance != null) {
+          const n = Number(settings.cash_opening_balance)
+          opening = Number.isFinite(n) ? n : 0
+        }
+      } catch {
+        opening = 0
+      }
+
+      setCashOpening(opening)
+      setCashDraft(String(opening))
       setStats({
         totalUnits: unitsCount || 0,
-        totalIncome,
+        totalPayments,
         totalExpenses,
         totalDocuments: docsCount || 0,
       })
@@ -52,7 +64,38 @@ export default function Dashboard() {
     }
   }
 
-  const balance = stats.totalIncome - stats.totalExpenses
+  const saveCashOpening = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canEdit()) return
+    const n = parseFloat(cashDraft.replace(',', '.'))
+    if (Number.isNaN(n) || n < 0) {
+      alert('Въведи валидна сума (≥ 0).')
+      return
+    }
+    setCashSaving(true)
+    try {
+      const { error } = await supabaseQuery(() =>
+        supabase.from('app_settings').upsert(
+          { id: 1, cash_opening_balance: n, updated_at: new Date().toISOString() },
+          { onConflict: 'id' }
+        )
+      )
+      if (error) throw error
+      setCashOpening(n)
+      setCashDraft(String(n))
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Грешка при запис'
+      alert(
+        msg.includes('app_settings') || msg.includes('relation')
+          ? `${msg}\n\nИзпълни миграцията database_migrations/017_app_settings_cash_opening.sql в Supabase.`
+          : msg
+      )
+    } finally {
+      setCashSaving(false)
+    }
+  }
+
+  const balance = cashOpening + stats.totalPayments - stats.totalExpenses
 
   return (
     <div className="dashboard">
@@ -75,8 +118,8 @@ export default function Dashboard() {
             <TrendingUp size={24} color="var(--success)" />
           </div>
           <div className="stat-content">
-            <div className="stat-label">Приходи</div>
-            <div className="stat-value">{stats.totalIncome.toFixed(2)} €</div>
+            <div className="stat-label">Постъпили плащания</div>
+            <div className="stat-value">{stats.totalPayments.toFixed(2)} €</div>
           </div>
         </div>
 
@@ -101,18 +144,55 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="balance-card">
-        <h2>Баланс</h2>
-        <div className={`balance-amount ${balance >= 0 ? 'positive' : 'negative'}`}>
-          {balance >= 0 ? '+' : ''}{balance.toFixed(2)} €
+      <div className="dashboard-cash-panel">
+        <div className="dashboard-cash-head">
+          <Wallet size={22} className="dashboard-cash-icon" aria-hidden />
+          <h2>Начална наличност в касата</h2>
         </div>
+        <p className="dashboard-cash-hint">
+          Сума в касата преди записите в приложението (без превалутиране). Балансът по-долу = тази сума +
+          постъпили плащания от страницата „Задължения“ (статус платено) − разходи от „Разходи“.
+        </p>
+        {canEdit() ? (
+          <form className="dashboard-cash-form" onSubmit={saveCashOpening}>
+            <label htmlFor="cash-opening">Сума (€)</label>
+            <div className="dashboard-cash-row">
+              <input
+                id="cash-opening"
+                type="text"
+                inputMode="decimal"
+                value={cashDraft}
+                onChange={(e) => setCashDraft(e.target.value)}
+                placeholder="0"
+              />
+              <button type="submit" className="btn-primary" disabled={cashSaving}>
+                {cashSaving ? 'Запис…' : 'Запази'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p className="dashboard-cash-readonly">
+            <strong>{cashOpening.toFixed(2)} €</strong>
+          </p>
+        )}
+      </div>
+
+      <div className="balance-card">
+        <h2>Обща наличност (очаквана каса)</h2>
+        <div className={`balance-amount ${balance >= 0 ? 'positive' : 'negative'}`}>
+          {balance >= 0 ? '+' : ''}
+          {balance.toFixed(2)} €
+        </div>
+        <p className="balance-breakdown">
+          {cashOpening.toFixed(2)} € (начало) + {stats.totalPayments.toFixed(2)} € (постъпили плащания) −{' '}
+          {stats.totalExpenses.toFixed(2)} € (разходи)
+        </p>
         <p className="balance-description">
           {balance >= 0
-            ? 'Положителен баланс'
-            : 'Отрицателен баланс - необходими са допълнителни средства'}
+            ? 'Положителен баланс спрямо записаните движения.'
+            : 'Отрицателен баланс — преразход спрямо началото и записите.'}
         </p>
       </div>
     </div>
   )
 }
-
