@@ -427,8 +427,30 @@
   color: var(--primary);
 }
 
-.obligations-period-select {
-  min-width: min(100%, 320px);
+.obligations-period-display {
+  margin: 0;
+  min-width: min(100%, 360px);
+  max-width: 100%;
+  font-size: 0.875rem;
+  color: var(--text);
+  text-align: right;
+  line-height: 1.4;
+}
+
+.obligations-period-dates {
+  color: var(--text-light);
+  font-weight: 400;
+}
+
+.obligations-period-missing {
+  text-align: right;
+}
+
+.obligations-summary-heading {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .obligations-unit-summary {
@@ -474,6 +496,12 @@
 .balance-ok {
   color: var(--success);
   font-weight: 600;
+}
+
+.payment-method-tag {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  margin-top: 0.2rem;
 }
 
 @media (max-width: 768px) {

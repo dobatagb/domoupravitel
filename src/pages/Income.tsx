@@ -232,12 +232,12 @@ export default function Income() {
       <div className="summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
         <div className="summary-card">
           <h3>Общо приходи</h3>
-          <div className="summary-amount">{totalIncome.toFixed(2)} лв</div>
+          <div className="summary-amount">{totalIncome.toFixed(2)} €</div>
         </div>
         {Object.entries(incomeByType).map(([type, amount]) => (
           <div key={type} className="summary-card">
             <h3>{incomeTypeLabels[type as IncomeType]}</h3>
-            <div className="summary-amount">{amount.toFixed(2)} лв</div>
+            <div className="summary-amount">{amount.toFixed(2)} €</div>
           </div>
         ))}
       </div>
@@ -276,7 +276,7 @@ export default function Income() {
                       ? `${format(new Date(income.period_start), 'dd.MM.yyyy', { locale: bg })} - ${format(new Date(income.period_end), 'dd.MM.yyyy', { locale: bg })}`
                       : '-'}
                   </td>
-                  <td className="amount-cell">{income.amount.toFixed(2)} лв</td>
+                  <td className="amount-cell">{income.amount.toFixed(2)} €</td>
                   {canEdit() && (
                     <td>
                       <div className="table-actions">
@@ -329,7 +329,7 @@ export default function Income() {
                 </select>
               </div>
               <div className="form-group">
-                <label>Сума (лв) *</label>
+                <label>Сума (€) *</label>
                 <input
                   type="number"
                   step="0.01"

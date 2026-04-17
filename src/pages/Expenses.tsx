@@ -321,12 +321,12 @@ export default function Expenses() {
       <div className="summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
         <div className="summary-card">
           <h3>Общо разходи</h3>
-          <div className="summary-amount">{totalExpenses.toFixed(2)} лв</div>
+          <div className="summary-amount">{totalExpenses.toFixed(2)} €</div>
         </div>
         {Object.entries(expensesByCategory).map(([category, amount]) => (
           <div key={category} className="summary-card">
             <h3>{category}</h3>
-            <div className="summary-amount">{amount.toFixed(2)} лв</div>
+            <div className="summary-amount">{amount.toFixed(2)} €</div>
           </div>
         ))}
       </div>
@@ -372,7 +372,7 @@ export default function Expenses() {
                       <span style={{ color: '#ef4444' }}>Неразпределено</span>
                     )}
                   </td>
-                  <td className="amount-cell">{expense.amount.toFixed(2)} лв</td>
+                  <td className="amount-cell">{expense.amount.toFixed(2)} €</td>
                   {canEdit() && (
                     <td>
                       <div className="table-actions">
@@ -413,7 +413,7 @@ export default function Expenses() {
             <h2>{editingExpense ? 'Редактирай разход' : 'Добави разход'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label>Сума (лв) *</label>
+                <label>Сума (€) *</label>
                 <input
                   type="number"
                   step="0.01"
@@ -503,7 +503,7 @@ export default function Expenses() {
         <div className="modal-overlay" onClick={() => setShowDistributionModal(false)}>
           <div className="modal-content" style={{ maxWidth: '800px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <h2>Осчетоводяване: {distributingExpense.description}</h2>
-            <p>Обща сума: <strong>{distributingExpense.amount.toFixed(2)} лв</strong></p>
+            <p>Обща сума: <strong>{distributingExpense.amount.toFixed(2)} €</strong></p>
             
             <div style={{ marginBottom: '15px', display: 'flex', gap: '10px' }}>
               <button
@@ -523,10 +523,10 @@ export default function Expenses() {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <strong>Разпределено: {totalDistributed.toFixed(2)} лв / {distributingExpense.amount.toFixed(2)} лв</strong>
+              <strong>Разпределено: {totalDistributed.toFixed(2)} € / {distributingExpense.amount.toFixed(2)} €</strong>
               {Math.abs(totalDistributed - distributingExpense.amount) > 0.01 && (
                 <span style={{ color: '#ef4444', marginLeft: '10px' }}>
-                  Разлика: {(totalDistributed - distributingExpense.amount).toFixed(2)} лв
+                  Разлика: {(totalDistributed - distributingExpense.amount).toFixed(2)} €
                 </span>
               )}
             </div>
@@ -538,7 +538,7 @@ export default function Expenses() {
                     <th style={{ textAlign: 'left', padding: '8px' }}>Единица</th>
                     <th style={{ textAlign: 'left', padding: '8px' }}>Собственик</th>
                     <th style={{ textAlign: 'left', padding: '8px' }}>Площ (м²)</th>
-                    <th style={{ textAlign: 'right', padding: '8px' }}>Сума (лв)</th>
+                    <th style={{ textAlign: 'right', padding: '8px' }}>Сума (€)</th>
                   </tr>
                 </thead>
                 <tbody>

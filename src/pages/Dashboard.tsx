@@ -76,7 +76,7 @@ export default function Dashboard() {
           </div>
           <div className="stat-content">
             <div className="stat-label">Приходи</div>
-            <div className="stat-value">{stats.totalIncome.toFixed(2)} лв</div>
+            <div className="stat-value">{stats.totalIncome.toFixed(2)} €</div>
           </div>
         </div>
 
@@ -86,7 +86,7 @@ export default function Dashboard() {
           </div>
           <div className="stat-content">
             <div className="stat-label">Разходи</div>
-            <div className="stat-value">{stats.totalExpenses.toFixed(2)} лв</div>
+            <div className="stat-value">{stats.totalExpenses.toFixed(2)} €</div>
           </div>
         </div>
 
@@ -104,7 +104,7 @@ export default function Dashboard() {
       <div className="balance-card">
         <h2>Баланс</h2>
         <div className={`balance-amount ${balance >= 0 ? 'positive' : 'negative'}`}>
-          {balance >= 0 ? '+' : ''}{balance.toFixed(2)} лв
+          {balance >= 0 ? '+' : ''}{balance.toFixed(2)} €
         </div>
         <p className="balance-description">
           {balance >= 0

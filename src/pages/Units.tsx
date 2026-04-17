@@ -327,7 +327,7 @@ export default function Units() {
                 {openingBal > 0 && (
                   <div className="detail-item">
                     <span className="detail-label">Пренесен дълг:</span>
-                    <span className="detail-value">{openingBal.toFixed(2)} лв</span>
+                    <span className="detail-value">{openingBal.toFixed(2)} €</span>
                   </div>
                 )}
               </div>
@@ -471,7 +471,7 @@ export default function Units() {
               <div className="form-section">
                 <h3>Задължения</h3>
                 <div className="form-group">
-                  <label>Пренесен дълг (лв)</label>
+                  <label>Пренесен дълг (€)</label>
                   <input
                     type="text"
                     inputMode="decimal"

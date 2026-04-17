@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { CalendarRange, Filter, Edit2, Plus, Trash2 } from 'lucide-react'
+import { Filter, Edit2, Plus, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import { useUnitGroups } from '../hooks/useUnitGroups'
 import './Obligations.css'
+
+interface PaymentAllocationRow {
+  amount: number | string
+  unit_obligations: { title: string; kind: string } | null
+}
 
 interface Payment {
   id: string
@@ -15,10 +20,12 @@ interface Payment {
   payment_date: string | null
   status: string
   notes: string | null
+  payment_method?: string | null
   period_start: string | null
   period_end: string | null
   created_at: string
   updated_at: string
+  payment_allocations?: PaymentAllocationRow[] | null
   units: {
     type: string
     number: string
@@ -41,36 +48,29 @@ const incomeTypeLabels: Record<string, string> = {
   other: 'Друго',
 }
 
+const paymentMethodLabels: Record<string, string> = {
+  cash: 'В брой',
+  bank_transfer: 'Банков превод',
+  card: 'Карта',
+  other: 'Друго',
+}
+
 function descriptionLine(payment: Payment): string {
   if (payment.income) {
     const t = incomeTypeLabels[payment.income.type] ?? payment.income.type
     return `${t}: ${payment.income.description}`
   }
+  const allocs = payment.payment_allocations
+  if (allocs && allocs.length > 0) {
+    const parts = allocs.map((a) => {
+      const t = a.unit_obligations?.title ?? 'задължение'
+      const amt = typeof a.amount === 'string' ? parseFloat(a.amount) : Number(a.amount)
+      return `${t} ${amt.toFixed(2)} €`
+    })
+    return `Приспадане: ${parts.join('; ')}`
+  }
   if (payment.notes?.trim()) return payment.notes.trim()
   return 'Ръчно регистрирано плащане'
-}
-
-/** Плащането покрива част от избрания билинг период (инклузивни дати). */
-function paymentOverlapsBillingPeriod(
-  p: Payment,
-  dateFrom: string,
-  dateTo: string
-): boolean {
-  const ps = p.period_start
-  const pe = p.period_end
-  if (!ps || !pe) return false
-  const a = ps.slice(0, 10)
-  const b = pe.slice(0, 10)
-  const bf = dateFrom.slice(0, 10)
-  const bt = dateTo.slice(0, 10)
-  return a <= bt && b >= bf
-}
-
-interface BillingPeriodRow {
-  id: string
-  name: string
-  date_from: string
-  date_to: string
 }
 
 interface UnitRow {
@@ -83,12 +83,6 @@ interface UnitRow {
   group?: { name: string; code: string } | null
 }
 
-function parseOpeningBalance(v: unknown): number {
-  if (v == null || v === '') return 0
-  const n = typeof v === 'string' ? parseFloat(v.replace(',', '.')) : Number(v)
-  return Number.isFinite(n) && n >= 0 ? n : 0
-}
-
 export default function Obligations() {
   const { canEdit } = useAuth()
   const { labelForCode } = useUnitGroups()
@@ -97,9 +91,9 @@ export default function Obligations() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [filterUnit, setFilterUnit] = useState<string>('all')
   const [units, setUnits] = useState<UnitRow[]>([])
-  const [billingPeriods, setBillingPeriods] = useState<BillingPeriodRow[]>([])
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('')
-  const [groupAmounts, setGroupAmounts] = useState<Record<string, number>>({})
+  /** Сума amount_remaining по unit_id (след миграция 015). */
+  const [dueByUnit, setDueByUnit] = useState<Record<string, number>>({})
+  const [maxPayForUnit, setMaxPayForUnit] = useState<number | null>(null)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -115,59 +109,33 @@ export default function Obligations() {
     amount: '',
     payment_date: new Date().toISOString().split('T')[0],
     notes: '',
+    payment_method: '' as '' | 'cash' | 'bank_transfer' | 'card' | 'other',
   })
 
-  useEffect(() => {
-    fetchPayments()
-    fetchUnits()
-    void fetchBillingPeriods()
-  }, [])
-
-  const fetchBillingPeriods = async () => {
+  const fetchDueByUnitFromDb = async () => {
     try {
       const { data, error } = await supabaseQuery(() =>
-        supabase
-          .from('billing_periods')
-          .select('id, name, date_from, date_to')
-          .order('sort_order', { ascending: true })
-          .order('date_from', { ascending: false })
+        supabase.from('unit_obligations').select('unit_id, amount_remaining')
       )
       if (error) throw error
-      const list = (data as BillingPeriodRow[]) || []
-      setBillingPeriods(list)
-      setSelectedPeriodId((prev) => {
-        if (prev && list.some((p) => p.id === prev)) return prev
-        return list[0]?.id ?? ''
-      })
+      const map: Record<string, number> = {}
+      for (const row of data || []) {
+        const r = row as { unit_id: string; amount_remaining: number | string }
+        const v = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
+        map[r.unit_id] = (map[r.unit_id] ?? 0) + (Number.isFinite(v) ? v : 0)
+      }
+      setDueByUnit(map)
     } catch (e) {
-      console.error('billing_periods:', e)
-      setBillingPeriods([])
+      console.warn('unit_obligations:', e)
+      setDueByUnit({})
     }
   }
 
   useEffect(() => {
-    if (!selectedPeriodId) {
-      setGroupAmounts({})
-      return
-    }
-    void (async () => {
-      try {
-        const { data, error } = await supabaseQuery(() =>
-          supabase.from('period_group_amounts').select('group_id, amount').eq('period_id', selectedPeriodId)
-        )
-        if (error) throw error
-        const map: Record<string, number> = {}
-        for (const row of data || []) {
-          const r = row as { group_id: string; amount: number | string }
-          map[r.group_id] = typeof r.amount === 'string' ? parseFloat(r.amount) : Number(r.amount)
-        }
-        setGroupAmounts(map)
-      } catch (e) {
-        console.error('period_group_amounts:', e)
-        setGroupAmounts({})
-      }
-    })()
-  }, [selectedPeriodId])
+    fetchPayments()
+    fetchUnits()
+    void fetchDueByUnitFromDb()
+  }, [])
 
   const fetchPayments = async () => {
     setLoadError(null)
@@ -177,6 +145,10 @@ export default function Obligations() {
           .from('payments')
           .select(`
           *,
+          payment_allocations (
+            amount,
+            unit_obligations ( title, kind )
+          ),
           units:unit_id (type, number, owner_name, group:group_id (name, list_label_short, code)),
           income:income_id (type, description, date, period_start, period_end)
         `)
@@ -216,9 +188,29 @@ export default function Obligations() {
       amount: '',
       payment_date: new Date().toISOString().split('T')[0],
       notes: '',
+      payment_method: '',
     })
+    setMaxPayForUnit(null)
     setShowAddModal(true)
   }
+
+  useEffect(() => {
+    if (!addForm.unit_id) {
+      setMaxPayForUnit(null)
+      return
+    }
+    void (async () => {
+      const { data, error } = await supabaseQuery(() =>
+        supabase.rpc('unit_total_due', { p_unit_id: addForm.unit_id })
+      )
+      if (error) {
+        setMaxPayForUnit(null)
+        return
+      }
+      const n = data != null ? Number(data) : 0
+      setMaxPayForUnit(Number.isFinite(n) ? n : null)
+    })()
+  }, [addForm.unit_id, showAddModal])
 
   const handleCreatePayment = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -226,35 +218,40 @@ export default function Obligations() {
       alert('Попълни единица, сума и дата на плащане.')
       return
     }
-    const bp = billingPeriods.find((p) => p.id === selectedPeriodId)
-    if (!bp) {
-      alert('Избери билинг период в панела „Период на таксуване“ горе.')
-      return
-    }
     const amount = parseFloat(addForm.amount.replace(',', '.'))
     if (Number.isNaN(amount) || amount <= 0) {
       alert('Въведи валидна сума.')
       return
     }
+    if (maxPayForUnit != null) {
+      if (maxPayForUnit <= 0) {
+        alert('Няма дължими суми за тази единица.')
+        return
+      }
+      if (amount > maxPayForUnit + 0.005) {
+        alert(`Сумата надвишава дължимото. Максимално: ${maxPayForUnit.toFixed(2)} €.`)
+        return
+      }
+    }
     try {
-      const { error } = await supabase.from('payments').insert({
-        income_id: null,
-        unit_id: addForm.unit_id,
-        amount,
-        period_start: bp.date_from.slice(0, 10),
-        period_end: bp.date_to.slice(0, 10),
-        payment_date: addForm.payment_date,
-        status: 'paid',
-        notes: addForm.notes.trim() || null,
-      })
+      const { error } = await supabaseQuery(() =>
+        supabase.rpc('register_payment', {
+          p_unit_id: addForm.unit_id,
+          p_amount: amount,
+          p_payment_date: addForm.payment_date,
+          p_notes: addForm.notes.trim() || null,
+          p_payment_method: addForm.payment_method || null,
+        })
+      )
       if (error) throw error
       setShowAddModal(false)
-      fetchPayments()
+      await fetchPayments()
+      await fetchDueByUnitFromDb()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при запис'
       alert(
-        msg.includes('null value') || msg.includes('column')
-          ? `${msg}\n\nИзпълни миграцията database_migrations/002_payments_simple.sql в Supabase SQL Editor.`
+        msg.includes('null value') || msg.includes('column') || msg.includes('function')
+          ? `${msg}\n\nИзпълни миграцията database_migrations/015_unit_obligations_payment_allocations.sql в Supabase SQL Editor.`
           : msg
       )
     }
@@ -262,6 +259,10 @@ export default function Obligations() {
 
   const handleUpdatePayment = async () => {
     if (!editingPayment) return
+    if (!editingPayment.income_id) {
+      alert('Плащанията с автоматично приспадане не се редактират оттук — изтрий записа и въведи наново при нужда.')
+      return
+    }
     const amount = parseFloat(formData.amount.replace(',', '.'))
     if (Number.isNaN(amount) || amount <= 0) {
       alert('Въведи валидна сума.')
@@ -292,15 +293,23 @@ export default function Obligations() {
     if (!canEdit()) return
     const u = payment.units
     const label = u
-      ? `${u.group?.name ?? labelForCode(u.type)} ${u.number} — ${payment.amount.toFixed(2)} лв`
+      ? `${u.group?.name ?? labelForCode(u.type)} ${u.number} — ${payment.amount.toFixed(2)} €`
       : 'това плащане'
     if (!confirm(`Изтриване на плащане: ${label}?\n\nДействието не може да се отмени.`)) {
       return
     }
     try {
-      const { error } = await supabase.from('payments').delete().eq('id', payment.id)
-      if (error) throw error
+      if (!payment.income_id) {
+        const { error } = await supabaseQuery(() =>
+          supabase.rpc('delete_payment_with_restore', { p_payment_id: payment.id })
+        )
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('payments').delete().eq('id', payment.id)
+        if (error) throw error
+      }
       await fetchPayments()
+      await fetchDueByUnitFromDb()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при изтриване'
       alert(msg)
@@ -327,10 +336,7 @@ export default function Obligations() {
     count: filteredPayments.length,
   }
 
-  const selectedBillingPeriod = billingPeriods.find((p) => p.id === selectedPeriodId)
   const unitSummaryRows = (() => {
-    if (!selectedBillingPeriod) return []
-    const { date_from: df, date_to: dt } = selectedBillingPeriod
     const list =
       filterUnit === 'all' ? units : units.filter((u) => u.id === filterUnit)
     return [...list]
@@ -341,15 +347,8 @@ export default function Obligations() {
         return c !== 0 ? c : a.number.localeCompare(b.number, 'bg', { numeric: true })
       })
       .map((u) => {
-        const due = groupAmounts[u.group_id]
-        const dueNum = due != null && !Number.isNaN(due) ? due : null
-        const opening = parseOpeningBalance(u.opening_balance)
-        const paid = payments
-          .filter((p) => p.unit_id === u.id && paymentOverlapsBillingPeriod(p, df, dt))
-          .reduce((s, p) => s + p.amount, 0)
-        const periodPart = dueNum ?? 0
-        const balance = periodPart - paid + opening
-        return { unit: u, due: dueNum, opening, paid, balance }
+        const totalDue = dueByUnit[u.id] ?? 0
+        return { unit: u, totalDue }
       })
   })()
 
@@ -368,6 +367,7 @@ export default function Obligations() {
             onClick={() => {
               setLoading(true)
               void fetchPayments()
+              void fetchDueByUnitFromDb()
             }}
           >
             Опитай отново
@@ -378,8 +378,9 @@ export default function Obligations() {
         <div>
           <h1>Задължения</h1>
           <p>
-            За периода: дължимото по група идва от „Периоди“. Различни стари задължения по апартамент се въвеждат като
-            пренесен дълг в картона на единицата. Остатъкът включва и двете, минус платеното за избрания период.
+            Неплатените суми идват от редове в „Задължения“ в базата (периоди по група + пренесен дълг). При плащане сумата се
+            приспада автоматично: първо извънредните (най-старите), после редовните (най-старите). Не се допуска плащане над
+            остатъка.
           </p>
         </div>
         <div className="page-header-actions">
@@ -395,7 +396,7 @@ export default function Obligations() {
       <div className="stats-cards obligations-stats-simple">
         <div className="stat-card">
           <div className="stat-label">Обща сума (показани)</div>
-          <div className="stat-value">{stats.total.toFixed(2)} лв</div>
+          <div className="stat-value">{stats.total.toFixed(2)} €</div>
         </div>
         <div className="stat-card paid">
           <div className="stat-label">Брой плащания</div>
@@ -404,44 +405,19 @@ export default function Obligations() {
       </div>
 
       <div className="obligations-period-panel">
-        <div className="obligations-period-head">
-          <h2>
-            <CalendarRange size={22} className="obligations-period-icon" aria-hidden />
-            Период на таксуване
-          </h2>
-          <select
-            className="filter-select obligations-period-select"
-            value={selectedPeriodId}
-            onChange={(e) => setSelectedPeriodId(e.target.value)}
-            aria-label="Билинг период"
-          >
-            {billingPeriods.length === 0 ? (
-              <option value="">Няма периоди — добави в „Периоди“</option>
-            ) : (
-              billingPeriods.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({format(new Date(p.date_from), 'dd.MM.yyyy', { locale: bg })} —{' '}
-                  {format(new Date(p.date_to), 'dd.MM.yyyy', { locale: bg })})
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-        {selectedBillingPeriod && unitSummaryRows.length > 0 && (
+        {units.length > 0 && unitSummaryRows.length > 0 && (
           <div className="obligations-unit-summary">
+            <h2 className="obligations-summary-heading">Неплатено по единици</h2>
             <table>
               <thead>
                 <tr>
                   <th>Единица</th>
                   <th>Група</th>
-                  <th>Дължимо (период)</th>
-                  <th>Пренесен</th>
-                  <th>Платено (за периода)</th>
-                  <th>Остатък</th>
+                  <th>Неплатено</th>
                 </tr>
               </thead>
               <tbody>
-                {unitSummaryRows.map(({ unit: u, due, opening, paid, balance }) => (
+                {unitSummaryRows.map(({ unit: u, totalDue }) => (
                   <tr key={u.id}>
                     <td>
                       <strong>
@@ -450,12 +426,9 @@ export default function Obligations() {
                       <div className="unit-owner">{u.owner_name}</div>
                     </td>
                     <td>{u.group?.name ?? '—'}</td>
-                    <td>{due != null ? `${due.toFixed(2)} лв` : '—'}</td>
-                    <td>{opening > 0 ? `${opening.toFixed(2)} лв` : '—'}</td>
-                    <td>{paid.toFixed(2)} лв</td>
                     <td>
-                      <span className={balance > 0.009 ? 'balance-owed' : 'balance-ok'}>
-                        {balance.toFixed(2)} лв
+                      <span className={totalDue > 0.009 ? 'balance-owed' : 'balance-ok'}>
+                        {totalDue.toFixed(2)} €
                       </span>
                     </td>
                   </tr>
@@ -463,16 +436,15 @@ export default function Obligations() {
               </tbody>
             </table>
             <p className="obligations-period-hint">
-              „Дължимо (период)“ е от екрана „Периоди“. „Пренесен“ е полето в единицата (стари задължения). Остатък = дължимо
-              за периода − платено за периода + пренесен дълг. Намаляваш пренесения дълг ръчно в единицата, когато погасиш
-              старата сума.
+              Колоната е сумата от всички непогасени задължения по единицата (редовни и извънредни). Редовете се създават от
+              екрана „Периоди“ и от пренесения дълг при миграцията; извънредни задължения — с отделна функция (по-късно).
             </p>
           </div>
         )}
-        {selectedBillingPeriod && units.length === 0 && (
+        {units.length === 0 && (
           <p className="obligations-period-empty">Няма регистрирани единици.</p>
         )}
-        {selectedBillingPeriod && units.length > 0 && unitSummaryRows.length === 0 && (
+        {units.length > 0 && unitSummaryRows.length === 0 && (
           <p className="obligations-period-empty">
             Няма единици за показване — провери филтъра „Всички единици“ по-долу.
           </p>
@@ -529,9 +501,12 @@ export default function Obligations() {
                     </td>
                     <td>
                       <div className="income-description">{descriptionLine(payment)}</div>
+                      {payment.payment_method && paymentMethodLabels[payment.payment_method] && (
+                        <div className="payment-method-tag">{paymentMethodLabels[payment.payment_method]}</div>
+                      )}
                     </td>
                     <td>
-                      <strong className="amount">{payment.amount.toFixed(2)} лв</strong>
+                      <strong className="amount">{payment.amount.toFixed(2)} €</strong>
                     </td>
                     <td>
                       {payment.payment_date ? (
@@ -543,14 +518,16 @@ export default function Obligations() {
                     {canEdit() && (
                       <td>
                         <div className="payment-row-actions">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={() => openEditModal(payment)}
-                            title="Редактирай"
-                          >
-                            <Edit2 size={18} />
-                          </button>
+                          {payment.income_id && (
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              onClick={() => openEditModal(payment)}
+                              title="Редактирай"
+                            >
+                              <Edit2 size={18} />
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="icon-btn danger"
@@ -575,7 +552,14 @@ export default function Obligations() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Ново плащане</h2>
             <p className="form-hint" style={{ marginTop: 0 }}>
-              Плащането се отнася към избрания горе билинг период. Попълни единица, сума и дата на плащане.
+              Сумата се приспада автоматично по ред на задълженията (извънредни първи). Не може да надвиши неплатеното по
+              единицата.
+              {maxPayForUnit != null && addForm.unit_id && (
+                <>
+                  {' '}
+                  <strong>Максимум сега: {maxPayForUnit.toFixed(2)} €</strong>
+                </>
+              )}
             </p>
             <form onSubmit={handleCreatePayment}>
               <div className="form-group">
@@ -595,7 +579,7 @@ export default function Obligations() {
                 </select>
               </div>
               <div className="form-group">
-                <label htmlFor="add-amount">Сума (лв) *</label>
+                <label htmlFor="add-amount">Сума (€) *</label>
                 <input
                   id="add-amount"
                   type="text"
@@ -615,6 +599,25 @@ export default function Obligations() {
                   onChange={(e) => setAddForm({ ...addForm, payment_date: e.target.value })}
                   required
                 />
+              </div>
+              <div className="form-group">
+                <label htmlFor="add-method">Начин на плащане</label>
+                <select
+                  id="add-method"
+                  value={addForm.payment_method}
+                  onChange={(e) =>
+                    setAddForm({
+                      ...addForm,
+                      payment_method: e.target.value as typeof addForm.payment_method,
+                    })
+                  }
+                >
+                  <option value="">— не е посочен —</option>
+                  <option value="cash">В брой</option>
+                  <option value="bank_transfer">Банков превод</option>
+                  <option value="card">Карта</option>
+                  <option value="other">Друго</option>
+                </select>
               </div>
               <div className="form-group">
                 <label htmlFor="add-notes">Бележки / пояснение</label>
@@ -650,7 +653,7 @@ export default function Obligations() {
               }}
             >
               <div className="form-group">
-                <label>Сума (лв) *</label>
+                <label>Сума (€) *</label>
                 <input
                   type="text"
                   inputMode="decimal"

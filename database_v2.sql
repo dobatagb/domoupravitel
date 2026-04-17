@@ -132,7 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_billing_periods_sort ON billing_periods (sort_ord
 CREATE TABLE IF NOT EXISTS period_group_amounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   period_id UUID NOT NULL REFERENCES billing_periods(id) ON DELETE CASCADE,
-  group_id UUID NOT NULL REFERENCES unit_groups(id) ON DELETE RESTRICT,
+  group_id UUID NOT NULL REFERENCES unit_groups(id) ON DELETE CASCADE,
   amount NUMERIC(12, 2) NOT NULL CHECK (amount >= 0),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS units (
   
   -- Метаданни
   notes TEXT,
-  -- Пренесен дълг (лв): стари задължения извън период × група; редактира се ръчно.
+  -- Пренесен дълг (EUR): стари задължения извън период × група; редактира се ръчно.
   opening_balance DECIMAL(12, 2) NOT NULL DEFAULT 0 CHECK (opening_balance >= 0),
 
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -194,6 +194,20 @@ CREATE INDEX IF NOT EXISTS idx_units_number ON units(number);
 
 -- Уникалност на номер в рамките на група
 CREATE UNIQUE INDEX IF NOT EXISTS idx_units_group_number ON units(group_id, number);
+
+-- ============================================
+-- 2.1. ПОТРЕБИТЕЛ ↔ ЕДИНИЦИ (много към много)
+-- ============================================
+CREATE TABLE IF NOT EXISTS user_unit_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  unit_id UUID NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CONSTRAINT user_unit_links_unique UNIQUE (user_id, unit_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_unit_links_user ON user_unit_links(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_unit_links_unit ON user_unit_links(unit_id);
 
 -- ============================================
 -- 3. ТАБЛИЦА ЗА ПРИХОДИ (income)
@@ -264,8 +278,10 @@ CREATE TABLE IF NOT EXISTS payments (
   payment_date DATE,
   status TEXT NOT NULL CHECK (status IN ('pending', 'paid', 'overdue')) DEFAULT 'pending',
   notes TEXT,
+  -- period_*: по избор; ръчните плащания (income_id NULL) се записват без период
   period_start DATE,
   period_end DATE,
+  payment_method TEXT,
   
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -276,6 +292,34 @@ CREATE INDEX IF NOT EXISTS idx_payments_unit ON payments(unit_id);
 CREATE INDEX IF NOT EXISTS idx_payments_income ON payments(income_id);
 CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(payment_date);
 CREATE INDEX IF NOT EXISTS idx_payments_period ON payments(period_start, period_end);
+
+-- ============================================
+-- 6.1. ЗАДЪЛЖЕНИЯ ПО ОБЕКТ И ПРИСПАДАНЕ (функции: database_migrations/015)
+-- ============================================
+CREATE TABLE IF NOT EXISTS unit_obligations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  unit_id UUID NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+  billing_period_id UUID REFERENCES billing_periods(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('regular', 'extraordinary')),
+  title TEXT NOT NULL,
+  amount_original NUMERIC(12, 2) NOT NULL CHECK (amount_original >= 0),
+  amount_remaining NUMERIC(12, 2) NOT NULL CHECK (amount_remaining >= 0),
+  sort_key BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT unit_obligations_remaining_lte_original CHECK (amount_remaining <= amount_original)
+);
+
+CREATE INDEX IF NOT EXISTS idx_unit_obligations_unit ON unit_obligations (unit_id);
+
+CREATE TABLE IF NOT EXISTS payment_allocations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+  unit_obligation_id UUID NOT NULL REFERENCES unit_obligations(id) ON DELETE RESTRICT,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_allocations_payment ON payment_allocations (payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_allocations_obligation ON payment_allocations (unit_obligation_id);
 
 -- ============================================
 -- 7. ТАБЛИЦА ЗА ТАКСИ (fees) - дефиниране на такси
@@ -453,9 +497,19 @@ CREATE POLICY "Editors can delete period_group_amounts"
 ALTER TABLE units ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Anyone can view units" ON units;
-CREATE POLICY "Anyone can view units"
+DROP POLICY IF EXISTS "units_select_scope" ON units;
+CREATE POLICY "units_select_scope"
   ON units FOR SELECT
-  USING (true);
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+    OR EXISTS (
+      SELECT 1 FROM user_unit_links l
+      WHERE l.user_id = auth.uid() AND l.unit_id = units.id
+    )
+  );
 
 DROP POLICY IF EXISTS "Only admins can insert units" ON units;
 CREATE POLICY "Only admins can insert units"
@@ -490,22 +544,110 @@ CREATE POLICY "Only admins can delete units"
     )
   );
 
--- Income
-ALTER TABLE income ENABLE ROW LEVEL SECURITY;
+-- Потребител ↔ единици
+ALTER TABLE user_unit_links ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Anyone can view income" ON income;
-CREATE POLICY "Anyone can view income"
-  ON income FOR SELECT
-  USING (true);
-
-DROP POLICY IF EXISTS "Only admins can manage income" ON income;
-CREATE POLICY "Only admins can manage income"
-  ON income FOR ALL
+DROP POLICY IF EXISTS "View user_unit_links" ON user_unit_links;
+CREATE POLICY "View user_unit_links"
+  ON user_unit_links FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM users
       WHERE users.id = auth.uid()
-      AND users.role = 'admin'
+      AND users.role IN ('admin', 'editor')
+    )
+    OR user_id = auth.uid()
+  );
+
+DROP POLICY IF EXISTS "Editors manage user_unit_links" ON user_unit_links;
+CREATE POLICY "Editors manage user_unit_links"
+  ON user_unit_links FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid()
+      AND users.role IN ('admin', 'editor')
+    )
+  );
+
+DROP POLICY IF EXISTS "Editors update user_unit_links" ON user_unit_links;
+CREATE POLICY "Editors update user_unit_links"
+  ON user_unit_links FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid()
+      AND users.role IN ('admin', 'editor')
+    )
+  );
+
+DROP POLICY IF EXISTS "Editors delete user_unit_links" ON user_unit_links;
+CREATE POLICY "Editors delete user_unit_links"
+  ON user_unit_links FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid()
+      AND users.role IN ('admin', 'editor')
+    )
+  );
+
+-- Income
+ALTER TABLE income ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view income" ON income;
+DROP POLICY IF EXISTS "income_select_scope" ON income;
+DROP POLICY IF EXISTS "income_insert_admins" ON income;
+DROP POLICY IF EXISTS "income_update_admins" ON income;
+DROP POLICY IF EXISTS "income_delete_admins" ON income;
+DROP POLICY IF EXISTS "Only admins can manage income" ON income;
+
+CREATE POLICY "income_select_scope"
+  ON income FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+    OR (
+      unit_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM user_unit_links l
+        WHERE l.user_id = auth.uid() AND l.unit_id = income.unit_id
+      )
+    )
+  );
+
+CREATE POLICY "income_insert_admins"
+  ON income FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
+    )
+  );
+
+CREATE POLICY "income_update_admins"
+  ON income FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
+    )
+  );
+
+CREATE POLICY "income_delete_admins"
+  ON income FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role = 'admin'
     )
   );
 
@@ -513,39 +655,80 @@ CREATE POLICY "Only admins can manage income"
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Anyone can view expenses" ON expenses;
-CREATE POLICY "Anyone can view expenses"
-  ON expenses FOR SELECT
-  USING (true);
-
+DROP POLICY IF EXISTS "expenses_select_scope" ON expenses;
+DROP POLICY IF EXISTS "expenses_insert_admins" ON expenses;
+DROP POLICY IF EXISTS "expenses_update_admins" ON expenses;
+DROP POLICY IF EXISTS "expenses_delete_admins" ON expenses;
 DROP POLICY IF EXISTS "Only admins can manage expenses" ON expenses;
-CREATE POLICY "Only admins can manage expenses"
-  ON expenses FOR ALL
+
+CREATE POLICY "expenses_select_scope"
+  ON expenses FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'admin'
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+    OR EXISTS (
+      SELECT 1 FROM expense_distributions ed
+      WHERE ed.expense_id = expenses.id
+      AND ed.unit_id IN (
+        SELECT l.unit_id FROM user_unit_links l WHERE l.user_id = auth.uid()
+      )
     )
   );
+
+CREATE POLICY "expenses_insert_admins"
+  ON expenses FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin')
+  );
+
+CREATE POLICY "expenses_update_admins"
+  ON expenses FOR UPDATE
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin'));
+
+CREATE POLICY "expenses_delete_admins"
+  ON expenses FOR DELETE
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin'));
 
 -- Expense Distributions
 ALTER TABLE expense_distributions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Anyone can view expense distributions" ON expense_distributions;
-CREATE POLICY "Anyone can view expense distributions"
-  ON expense_distributions FOR SELECT
-  USING (true);
-
+DROP POLICY IF EXISTS "expense_distributions_select_scope" ON expense_distributions;
+DROP POLICY IF EXISTS "expense_distributions_insert_admins" ON expense_distributions;
+DROP POLICY IF EXISTS "expense_distributions_update_admins" ON expense_distributions;
+DROP POLICY IF EXISTS "expense_distributions_delete_admins" ON expense_distributions;
 DROP POLICY IF EXISTS "Only admins can manage expense distributions" ON expense_distributions;
-CREATE POLICY "Only admins can manage expense distributions"
-  ON expense_distributions FOR ALL
+
+CREATE POLICY "expense_distributions_select_scope"
+  ON expense_distributions FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'admin'
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+    OR EXISTS (
+      SELECT 1 FROM user_unit_links l
+      WHERE l.user_id = auth.uid() AND l.unit_id = expense_distributions.unit_id
     )
   );
+
+CREATE POLICY "expense_distributions_insert_admins"
+  ON expense_distributions FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin')
+  );
+
+CREATE POLICY "expense_distributions_update_admins"
+  ON expense_distributions FOR UPDATE
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin'));
+
+CREATE POLICY "expense_distributions_delete_admins"
+  ON expense_distributions FOR DELETE
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role = 'admin'));
 
 -- Fees
 ALTER TABLE fees ENABLE ROW LEVEL SECURITY;
@@ -570,29 +753,124 @@ CREATE POLICY "Only admins can manage fees"
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Anyone can view payments" ON payments;
-CREATE POLICY "Anyone can view payments"
-  ON payments FOR SELECT
-  USING (true);
-
+DROP POLICY IF EXISTS "payments_select_scope" ON payments;
+DROP POLICY IF EXISTS "payments_insert_editors" ON payments;
+DROP POLICY IF EXISTS "payments_update_editors" ON payments;
+DROP POLICY IF EXISTS "payments_delete_editors" ON payments;
 DROP POLICY IF EXISTS "Only admins can manage payments" ON payments;
 DROP POLICY IF EXISTS "Editors can manage payments" ON payments;
-CREATE POLICY "Editors can manage payments"
-  ON payments FOR ALL
+
+CREATE POLICY "payments_select_scope"
+  ON payments FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role IN ('admin', 'editor')
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+    OR EXISTS (
+      SELECT 1 FROM user_unit_links l
+      WHERE l.user_id = auth.uid() AND l.unit_id = payments.unit_id
     )
   );
+
+CREATE POLICY "payments_insert_editors"
+  ON payments FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+  );
+
+CREATE POLICY "payments_update_editors"
+  ON payments FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+  );
+
+CREATE POLICY "payments_delete_editors"
+  ON payments FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+  );
+
+-- Unit obligations + payment allocations (виж migration 015 за функции)
+ALTER TABLE unit_obligations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_allocations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "unit_obligations_select_scope" ON unit_obligations;
+DROP POLICY IF EXISTS "unit_obligations_editors_all" ON unit_obligations;
+CREATE POLICY "unit_obligations_select_scope"
+  ON unit_obligations FOR SELECT
+  USING (
+    EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor'))
+    OR EXISTS (
+      SELECT 1 FROM user_unit_links l
+      WHERE l.user_id = auth.uid() AND l.unit_id = unit_obligations.unit_id
+    )
+  );
+CREATE POLICY "unit_obligations_editors_all"
+  ON unit_obligations FOR ALL
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')))
+  WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
+
+DROP POLICY IF EXISTS "payment_allocations_select_scope" ON payment_allocations;
+DROP POLICY IF EXISTS "payment_allocations_editors_all" ON payment_allocations;
+CREATE POLICY "payment_allocations_select_scope"
+  ON payment_allocations FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM payments p
+      WHERE p.id = payment_allocations.payment_id
+        AND (
+          EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor'))
+          OR EXISTS (
+            SELECT 1 FROM user_unit_links l
+            WHERE l.user_id = auth.uid() AND l.unit_id = p.unit_id
+          )
+        )
+    )
+  );
+CREATE POLICY "payment_allocations_editors_all"
+  ON payment_allocations FOR ALL
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')))
+  WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
 
 -- Documents
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Anyone can view documents" ON documents;
-CREATE POLICY "Anyone can view documents"
+DROP POLICY IF EXISTS "documents_select_scope" ON documents;
+
+CREATE POLICY "documents_select_scope"
   ON documents FOR SELECT
-  USING (true);
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+    OR (
+      related_type = 'unit'
+      AND related_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM user_unit_links l
+        WHERE l.user_id = auth.uid() AND l.unit_id = documents.related_id
+      )
+    )
+    OR (related_type IS NULL AND related_id IS NULL)
+  );
 
 DROP POLICY IF EXISTS "Only admins can manage documents" ON documents;
 CREATE POLICY "Only admins can manage documents"

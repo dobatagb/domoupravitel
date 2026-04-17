@@ -329,7 +329,7 @@ export default function BillingPeriods() {
                       <tr>
                         <th>Група</th>
                         <th>Код</th>
-                        <th>Сума (лв)</th>
+                        <th>Сума (€)</th>
                       </tr>
                     </thead>
                     <tbody>
