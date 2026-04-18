@@ -153,9 +153,17 @@ export default function Units() {
     e.preventDefault()
     try {
       if (isViewer && editingUnit) {
+        const areaRaw = formData.area.trim().replace(',', '.')
+        const area = parseFloat(areaRaw)
+        if (Number.isNaN(area) || area <= 0) {
+          alert('Квадратурата трябва да е положително число (напр. 65 или 65,5).')
+          return
+        }
+
         const { error } = await supabase
           .from('units')
           .update({
+            area,
             owner_name: formData.owner_name,
             owner_email: formData.owner_email || null,
             owner_phone: formData.owner_phone || null,
@@ -181,6 +189,13 @@ export default function Units() {
         return
       }
 
+      const areaRaw = formData.area.trim().replace(',', '.')
+      const area = parseFloat(areaRaw)
+      if (Number.isNaN(area) || area <= 0) {
+        alert('Квадратурата трябва да е положително число (напр. 65 или 65,5).')
+        return
+      }
+
       const obRaw = formData.opening_balance.trim().replace(',', '.')
       const openingBalance = obRaw === '' ? 0 : parseFloat(obRaw)
       if (Number.isNaN(openingBalance) || openingBalance < 0) {
@@ -192,7 +207,7 @@ export default function Units() {
         group_id: formData.group_id,
         type: selectedGroup.code,
         number: formData.number,
-        area: parseFloat(formData.area),
+        area,
         owner_name: formData.owner_name,
         owner_email: formData.owner_email || null,
         owner_phone: formData.owner_phone || null,
@@ -312,7 +327,7 @@ export default function Units() {
           <h1>{isViewer ? 'Мои обекти' : 'Обекти'}</h1>
           <p>
             {isViewer
-              ? 'Контакти на собственик и наемател по вашите обекти. Група, номер, площ и задължения се управляват от домоуправителя.'
+              ? 'Контакти на собственик и наемател по вашите обекти. Можете да коригирате квадратурата; група, номер и задължения се управляват от домоуправителя.'
               : 'Управление на апартаменти, гаражи, магазини и паркоместа'}
           </p>
         </div>
@@ -373,7 +388,7 @@ export default function Units() {
                     <button
                       className="icon-btn"
                       onClick={() => handleEdit(unit)}
-                      title={isViewer ? 'Редактирай контакти' : 'Редактирай'}
+                      title={isViewer ? 'Редактирай данни' : 'Редактирай'}
                     >
                       <Edit2 size={18} />
                     </button>
@@ -391,7 +406,7 @@ export default function Units() {
               </div>
               <div className="unit-details">
                 <div className="detail-item">
-                  <span className="detail-label">Площ:</span>
+                  <span className="detail-label">Квадратура:</span>
                   <span className="detail-value">{unit.area} м²</span>
                 </div>
                 {unit.floor?.trim() && (
@@ -446,14 +461,14 @@ export default function Units() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>
               {isViewer && editingUnit
-                ? 'Редактирай контакти'
+                ? 'Редактирай данни'
                 : editingUnit
                   ? 'Редактирай обект'
                   : 'Добави обект'}
             </h2>
             {isViewer && (
               <p className="form-hint" style={{ marginBottom: '1rem' }}>
-                Можете да променяте само данните за собственик, наемател и бележки.
+                Можете да променяте квадратура, данните за собственик, наемател и бележки.
               </p>
             )}
             <form onSubmit={handleSubmit}>
@@ -491,7 +506,7 @@ export default function Units() {
               </div>
 
               <div className="form-group">
-                <label>Площ (м²) *</label>
+                <label>Квадратура (м²) *</label>
                 <input
                   type="number"
                   step="0.01"
@@ -501,7 +516,7 @@ export default function Units() {
                   }
                   required
                   min="0.01"
-                  disabled={isViewer}
+                  placeholder="Напр. 65,5"
                 />
               </div>
 

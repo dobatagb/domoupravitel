@@ -11,6 +11,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, role: UserRole) => Promise<void>
   signOut: () => Promise<void>
+  updatePassword: (newPassword: string) => Promise<void>
   canEdit: () => boolean
   refreshUserRole: () => Promise<void>
   refreshUserRoleById: (userId: string) => Promise<void>
@@ -257,6 +258,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const updatePassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) throw error
+  }
+
   const canEdit = () => {
     return userRole === 'admin' || userRole === 'editor'
   }
@@ -308,6 +314,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         signUp,
         signOut,
+        updatePassword,
         canEdit,
         refreshUserRole,
         refreshUserRoleById,

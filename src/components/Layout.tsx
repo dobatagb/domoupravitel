@@ -1,13 +1,68 @@
+import { useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Home, Building2, TrendingDown, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid, History, Download, Wallet, Megaphone } from 'lucide-react'
+import {
+  Home,
+  Building2,
+  TrendingDown,
+  FileText,
+  LogOut,
+  CreditCard,
+  Tags,
+  CalendarRange,
+  Users,
+  LayoutGrid,
+  History,
+  Download,
+  Wallet,
+  Megaphone,
+  Settings,
+} from 'lucide-react'
 import { usePwaInstall } from '../hooks/usePwaInstall'
 import './Layout.css'
 
+const MIN_PASSWORD_LEN = 6
+
 export default function Layout() {
-  const { signOut, user, userRole } = useAuth()
+  const { signOut, user, userRole, updatePassword } = useAuth()
   const location = useLocation()
   const { canUseNativePrompt, promptInstall, showIosAddToHomeHint } = usePwaInstall()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordSaving, setPasswordSaving] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+
+  const closeSettings = () => {
+    setSettingsOpen(false)
+    setNewPassword('')
+    setConfirmPassword('')
+    setPasswordError(null)
+  }
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordError(null)
+    if (newPassword.length < MIN_PASSWORD_LEN) {
+      setPasswordError(`Паролата трябва да е поне ${MIN_PASSWORD_LEN} символа.`)
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Паролите не съвпадат.')
+      return
+    }
+    setPasswordSaving(true)
+    void updatePassword(newPassword)
+      .then(() => {
+        closeSettings()
+        alert('Паролата е сменена успешно.')
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Грешка при смяна на парола.'
+        setPasswordError(msg)
+      })
+      .finally(() => setPasswordSaving(false))
+  }
 
   // Viewers виждат само ограничен набор от менюта
   const navItems = userRole === 'viewer' 
@@ -42,7 +97,20 @@ export default function Layout() {
         <div className="sidebar-header">
           <h1>Домоуправител</h1>
           <div className="user-info">
-            <div className="user-email">{user?.email}</div>
+            <div className="user-email-row">
+              <div className="user-email" title={user?.email ?? undefined}>
+                {user?.email}
+              </div>
+              <button
+                type="button"
+                className="user-settings-btn"
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Настройки — смяна на парола"
+                title="Настройки"
+              >
+                <Settings size={18} aria-hidden />
+              </button>
+            </div>
             <div className="user-role">{userRole === 'admin' ? 'Администратор' : userRole === 'editor' ? 'Редактор' : 'Преглед'}</div>
           </div>
           {canUseNativePrompt && (
@@ -85,6 +153,64 @@ export default function Layout() {
       <main className="main-content">
         <Outlet />
       </main>
+
+      {settingsOpen && (
+        <div
+          className="layout-modal-overlay"
+          role="presentation"
+          onClick={closeSettings}
+        >
+          <div
+            className="layout-modal"
+            role="dialog"
+            aria-labelledby="layout-settings-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="layout-settings-title">Настройки на акаунта</h2>
+            <p className="layout-modal-lead">Смяна на парола за {user?.email}</p>
+            <form onSubmit={handlePasswordSubmit}>
+              <div className="layout-form-group">
+                <label htmlFor="layout-new-password">Нова парола</label>
+                <input
+                  id="layout-new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={passwordSaving}
+                  minLength={MIN_PASSWORD_LEN}
+                />
+              </div>
+              <div className="layout-form-group">
+                <label htmlFor="layout-confirm-password">Потвърди новата парола</label>
+                <input
+                  id="layout-confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={passwordSaving}
+                  minLength={MIN_PASSWORD_LEN}
+                />
+              </div>
+              {passwordError && <p className="layout-modal-error">{passwordError}</p>}
+              <div className="layout-modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={closeSettings}
+                  disabled={passwordSaving}
+                >
+                  Отказ
+                </button>
+                <button type="submit" className="btn-primary" disabled={passwordSaving}>
+                  {passwordSaving ? 'Запазване…' : 'Запази паролата'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -17,13 +17,14 @@ interface ObligationRow {
   unit_id: string
   amount_remaining: string | number
   kind: string
-  title: string
-  sort_key: number
-  billing_period_id: string | null
 }
 
-function colKey(o: Pick<ObligationRow, 'kind' | 'title' | 'billing_period_id'>): string {
-  return `${o.kind}\t${o.billing_period_id ?? 'null'}\t${o.title}`
+/** Фиксирани колони по вид задължение — без отделна колона за всеки период (иначе след години таблицата става неупотребима). */
+const KIND_ORDER = ['regular', 'extraordinary'] as const
+
+const KIND_LABEL: Record<string, string> = {
+  regular: 'Редовни',
+  extraordinary: 'Извънредни',
 }
 
 function parseAmt(v: string | number): number {
@@ -60,10 +61,7 @@ export default function ObligationsBoard() {
             .order('number', { ascending: true })
         ),
         supabaseQuery(() =>
-          supabase
-            .from('unit_obligations')
-            .select('unit_id, amount_remaining, kind, title, sort_key, billing_period_id')
-            .gt('amount_remaining', 0)
+          supabase.from('unit_obligations').select('unit_id, amount_remaining, kind').gt('amount_remaining', 0)
         ),
       ])
       if (eu) throw eu
@@ -94,23 +92,17 @@ export default function ObligationsBoard() {
   }
 
   const { columns, matrix, unitTotals } = useMemo(() => {
-    const meta = new Map<string, { kind: string; title: string; sort_key: number }>()
+    const kindsWithBalance = new Set<string>()
     for (const ob of obligations) {
-      const k = colKey(ob)
-      if (!meta.has(k)) {
-        meta.set(k, { kind: ob.kind, title: ob.title, sort_key: ob.sort_key })
-      }
+      if (parseAmt(ob.amount_remaining) > 0) kindsWithBalance.add(ob.kind)
     }
-    const keys = [...meta.keys()].sort((ka, kb) => {
-      const a = meta.get(ka)!
-      const b = meta.get(kb)!
-      if (a.kind !== b.kind) {
-        if (a.kind === 'regular' && b.kind === 'extraordinary') return -1
-        if (a.kind === 'extraordinary' && b.kind === 'regular') return 1
-      }
-      if (a.sort_key !== b.sort_key) return a.sort_key - b.sort_key
-      return ka.localeCompare(kb)
-    })
+    const keys: string[] = []
+    for (const k of KIND_ORDER) {
+      if (kindsWithBalance.has(k)) keys.push(k)
+    }
+    for (const k of kindsWithBalance) {
+      if (!keys.includes(k)) keys.push(k)
+    }
 
     const matrix: Record<string, Record<string, number>> = {}
     const unitTotals: Record<string, number> = {}
@@ -121,17 +113,18 @@ export default function ObligationsBoard() {
     }
 
     for (const ob of obligations) {
-      const k = colKey(ob)
       const v = parseAmt(ob.amount_remaining)
       if (v <= 0) continue
+      const col = ob.kind
       if (!matrix[ob.unit_id]) matrix[ob.unit_id] = {}
-      matrix[ob.unit_id][k] = (matrix[ob.unit_id][k] ?? 0) + v
+      matrix[ob.unit_id][col] = (matrix[ob.unit_id][col] ?? 0) + v
       unitTotals[ob.unit_id] = (unitTotals[ob.unit_id] ?? 0) + v
     }
 
     const columns = keys.map((key) => ({
       key,
-      ...meta.get(key)!,
+      kind: key,
+      title: KIND_LABEL[key] ?? key,
     }))
 
     return { columns, matrix, unitTotals }
@@ -144,7 +137,7 @@ export default function ObligationsBoard() {
       'Обект',
       'Етаж',
       'Собственик',
-      ...columns.map((c) => `${c.title}${c.kind === 'extraordinary' ? ' (извънр.)' : ''}`),
+      ...columns.map((c) => c.title),
       'Общо дължимо',
     ]
     const lines: string[] = [header.map(escapeCsvCell).join(sep)]
@@ -185,9 +178,10 @@ export default function ObligationsBoard() {
         </h1>
       </div>
       <p className="obligations-board-sub">
-        Колоните са само задължения с остатък &gt; 0 поне при един обект. Редът е: първо <strong>редовни</strong> (по
-        време), после <strong>извънредни</strong>. Последната колона е общата дължима сума по обект. При плащане
-        приспадането в системата е: първо извънредни, после редовни (най-старите първи) — виж спецификация §4.2.
+        Сумите по обект са <strong>агрегирани по вид</strong> (редовни / извънредни), без отделна колона за всеки
+        период — така таблицата остава четима и след много години. Показват се само редове с остатък &gt; 0 поне при
+        един обект. Последната колона е общо дължимо по обект. При плащане приспадането в системата е: първо
+        извънредни, после редовни (най-старите първи).
       </p>
 
       {loadError && (
@@ -199,19 +193,14 @@ export default function ObligationsBoard() {
         </div>
       )}
 
-      <div className="obligations-board-toolbar">
-        <div className="obligations-board-legend">
-          <span>
-            Редовни колони: стандартен фон. <span className="extra">Извънредни: оцветени.</span>
-          </span>
-        </div>
-        {columns.length > 0 && (
+      {columns.length > 0 && (
+        <div className="obligations-board-toolbar">
           <button type="button" className="btn-secondary obligations-board-export" onClick={exportCsv}>
             <Download size={18} aria-hidden />
             Експорт CSV (Excel)
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {units.length === 0 ? (
         <p className="obligations-board-empty">Няма регистрирани обекти.</p>
@@ -231,7 +220,6 @@ export default function ObligationsBoard() {
                     title={c.kind === 'extraordinary' ? 'Извънредно задължение' : 'Редовно задължение'}
                   >
                     {c.title}
-                    {c.kind === 'extraordinary' ? ' (извънр.)' : ''}
                   </th>
                 ))}
                 <th scope="col" className="col-total">

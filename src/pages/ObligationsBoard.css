@@ -2,7 +2,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1rem;
   margin-bottom: 1rem;
 }
@@ -117,21 +117,6 @@
   padding: 2rem;
   text-align: center;
   color: var(--text-light);
-}
-
-.obligations-board-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: center;
-  margin-bottom: 0.75rem;
-  font-size: 0.8125rem;
-  color: var(--text-light);
-}
-
-.obligations-board-legend span.extra {
-  color: var(--danger);
-  font-weight: 500;
 }
 
 .obligations-board-page .balance-owed {

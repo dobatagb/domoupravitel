@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { openPublicStorageInNewTab, rawBodyForStorageUpload } from '../lib/storageUpload'
 import { useAuth } from '../contexts/AuthContext'
@@ -7,12 +7,20 @@ import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Documents.css'
 
+export interface DocumentCategoryRow {
+  id: string
+  code: string
+  name: string
+}
+
 interface DocumentRow {
   id: string
   name: string
   file_path: string
   file_type: string
   description: string | null
+  document_category_id: string | null
+  document_categories: DocumentCategoryRow | null
   related_type: 'expense' | 'income' | 'unit' | null
   related_id: string | null
   created_at: string
@@ -31,42 +39,60 @@ function unitDisplayLabel(u: UnitLabel): string {
   return [g, n].filter(Boolean).join(' ') || u.owner_name || u.id.slice(0, 8)
 }
 
+/** PostgREST понякога връща вложения ред като обект или едноелементен масив. */
+function normalizeDocumentRow(raw: Record<string, unknown>): DocumentRow {
+  let cat = raw.document_categories
+  if (Array.isArray(cat)) cat = cat[0] ?? null
+  return {
+    ...(raw as unknown as DocumentRow),
+    document_categories: (cat ?? null) as DocumentCategoryRow | null,
+  }
+}
+
+type CategoryFilter = 'all' | 'none' | string
+
 export default function Documents() {
   const { canEdit } = useAuth()
   const [documents, setDocuments] = useState<DocumentRow[]>([])
+  const [documentCategories, setDocumentCategories] = useState<DocumentCategoryRow[]>([])
   const [unitLabels, setUnitLabels] = useState<Record<string, string>>({})
   const [units, setUnits] = useState<UnitLabel[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    document_category_id: '' as string,
     unit_id: '' as string,
     file: null as File | null,
   })
 
-  const fetchUnits = useCallback(async () => {
+  const loadPage = useCallback(async () => {
+    setLoading(true)
     try {
-      const { data } = await supabase
-        .from('units')
-        .select('id, number, owner_name, group:group_id (name)')
-        .order('type', { ascending: true })
-        .order('number', { ascending: true })
-      setUnits(((data ?? []) as unknown) as UnitLabel[])
-    } catch (error) {
-      console.error('Error fetching units:', error)
-    }
-  }, [])
+      const [{ data: catData, error: catErr }, { data: uData }] = await Promise.all([
+        supabase.from('document_categories').select('id, code, name').order('sort_order', { ascending: true }),
+        supabase
+          .from('units')
+          .select('id, number, owner_name, group:group_id (name)')
+          .order('type', { ascending: true })
+          .order('number', { ascending: true }),
+      ])
+      if (catErr) throw catErr
+      setDocumentCategories((catData ?? []) as DocumentCategoryRow[])
+      setUnits(((uData ?? []) as unknown) as UnitLabel[])
 
-  const fetchDocuments = useCallback(async () => {
-    try {
       const { data, error } = await supabaseQuery(() =>
-        supabase.from('documents').select('*').order('created_at', { ascending: false })
+        supabase
+          .from('documents')
+          .select('*, document_categories ( id, code, name )')
+          .order('created_at', { ascending: false })
       )
-
       if (error) throw error
-      const rows = (data || []) as DocumentRow[]
+      const rawRows = (data || []) as Record<string, unknown>[]
+      const rows = rawRows.map(normalizeDocumentRow)
       setDocuments(rows)
 
       const unitIds = [
@@ -89,16 +115,21 @@ export default function Documents() {
       }
       setUnitLabels(map)
     } catch (error) {
-      console.error('Error fetching documents:', error)
+      console.error('Error loading documents page:', error)
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void fetchUnits()
-    void fetchDocuments()
-  }, [fetchUnits, fetchDocuments])
+    void loadPage()
+  }, [loadPage])
+
+  const filteredDocuments = useMemo(() => {
+    if (categoryFilter === 'all') return documents
+    if (categoryFilter === 'none') return documents.filter((d) => !d.document_category_id)
+    return documents.filter((d) => d.document_category_id === categoryFilter)
+  }, [documents, categoryFilter])
 
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -125,11 +156,13 @@ export default function Documents() {
       void supabase.storage.from('documents').getPublicUrl(filePath)
 
       const unitId = formData.unit_id.trim()
+      const catId = formData.document_category_id.trim()
       const payload = {
         name: formData.name || formData.file.name,
         file_path: filePath,
         file_type: ct,
         description: formData.description || null,
+        document_category_id: catId || null,
         related_type: unitId ? ('unit' as const) : null,
         related_id: unitId || null,
       }
@@ -142,10 +175,11 @@ export default function Documents() {
       setFormData({
         name: '',
         description: '',
+        document_category_id: '',
         unit_id: '',
         file: null,
       })
-      void fetchDocuments()
+      void loadPage()
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Грешка при качване на файл'
       alert(msg)
@@ -166,7 +200,7 @@ export default function Documents() {
 
       if (dbError) throw dbError
 
-      void fetchDocuments()
+      void loadPage()
     } catch (error: unknown) {
       alert(error instanceof Error ? error.message : 'Грешка при изтриване')
     }
@@ -176,6 +210,7 @@ export default function Documents() {
     setFormData({
       name: '',
       description: '',
+      document_category_id: '',
       unit_id: '',
       file: null,
     })
@@ -223,11 +258,33 @@ export default function Documents() {
         )}
       </div>
 
+      {documents.length > 0 && (
+        <div className="documents-filter-bar">
+          <label htmlFor="documents-category-filter">Филтър по тип</label>
+          <select
+            id="documents-category-filter"
+            className="documents-filter-select"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
+          >
+            <option value="all">Всички</option>
+            <option value="none">Без тип</option>
+            {documentCategories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="documents-grid">
         {documents.length === 0 ? (
           <div className="empty-state">Няма качени документи</div>
+        ) : filteredDocuments.length === 0 ? (
+          <div className="empty-state">Няма документи за избрания тип</div>
         ) : (
-          documents.map((doc) => {
+          filteredDocuments.map((doc) => {
             const { data: urlData } = supabase.storage.from('documents').getPublicUrl(doc.file_path)
 
             return (
@@ -241,6 +298,9 @@ export default function Documents() {
                 )}
                 <div className="document-info">
                   <h3>{doc.name}</h3>
+                  {doc.document_categories?.name && (
+                    <div className="document-category">Тип: {doc.document_categories.name}</div>
+                  )}
                   {doc.description && <p>{doc.description}</p>}
                   {relatedLine(doc)}
                   <div className="document-date">
@@ -297,6 +357,20 @@ export default function Documents() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
                 />
+              </div>
+              <div className="form-group">
+                <label>Тип (опционално)</label>
+                <select
+                  value={formData.document_category_id}
+                  onChange={(e) => setFormData({ ...formData, document_category_id: e.target.value })}
+                >
+                  <option value="">— Без тип —</option>
+                  {documentCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="form-group">
                 <label>Обект (опционално)</label>

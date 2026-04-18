@@ -368,6 +368,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_fees_unique_active_type_all
   WHERE is_active = true AND unit_group_id IS NULL;
 
 -- ============================================
+-- 7.9 СПРАВЪЧНИК ТИПОВЕ ДОКУМЕНТИ (document_categories)
+-- ============================================
+CREATE TABLE IF NOT EXISTS document_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  sort_order SMALLINT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_categories_sort ON document_categories(sort_order);
+
+INSERT INTO document_categories (code, name, sort_order) VALUES
+  ('meetings', 'Събрания', 1),
+  ('administrative', 'Административни', 2),
+  ('other', 'Други', 3)
+ON CONFLICT (code) DO NOTHING;
+
+-- ============================================
 -- 8. ТАБЛИЦА ЗА ДОКУМЕНТИ (documents)
 -- ============================================
 CREATE TABLE IF NOT EXISTS documents (
@@ -376,6 +394,7 @@ CREATE TABLE IF NOT EXISTS documents (
   file_path TEXT NOT NULL,
   file_type TEXT NOT NULL,
   description TEXT,
+  document_category_id UUID REFERENCES document_categories(id) ON DELETE SET NULL,
   
   -- Свързване с обекти
   related_type TEXT CHECK (related_type IN ('expense', 'income', 'unit')),
@@ -385,6 +404,7 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_related ON documents(related_type, related_id);
+CREATE INDEX IF NOT EXISTS idx_documents_document_category_id ON documents(document_category_id);
 
 -- ============================================
 -- 8.1 НАСТРОЙКИ ПРИЛОЖЕНИЕ (един ред, виж migration 017)
@@ -543,37 +563,25 @@ CREATE POLICY "units_select_scope"
   );
 
 DROP POLICY IF EXISTS "Only admins can insert units" ON units;
-CREATE POLICY "Only admins can insert units"
+DROP POLICY IF EXISTS "units_insert_editors" ON units;
+CREATE POLICY "units_insert_editors"
   ON units FOR INSERT
   WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'admin'
-    )
+    EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor'))
   );
 
 DROP POLICY IF EXISTS "Only admins can update units" ON units;
-CREATE POLICY "Only admins can update units"
+DROP POLICY IF EXISTS "units_update_editors" ON units;
+CREATE POLICY "units_update_editors"
   ON units FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'admin'
-    )
-  );
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')))
+  WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
 
 DROP POLICY IF EXISTS "Only admins can delete units" ON units;
-CREATE POLICY "Only admins can delete units"
+DROP POLICY IF EXISTS "units_delete_editors" ON units;
+CREATE POLICY "units_delete_editors"
   ON units FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'admin'
-    )
-  );
+  USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
 
 -- Потребител ↔ единици
 ALTER TABLE user_unit_links ENABLE ROW LEVEL SECURITY;
@@ -897,6 +905,15 @@ CREATE POLICY "app_settings_update_editors"
   ON app_settings FOR UPDATE
   USING (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')))
   WITH CHECK (EXISTS (SELECT 1 FROM users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')));
+
+-- Document categories (справъчник — само четене за потребители)
+ALTER TABLE document_categories ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "document_categories_select_authenticated" ON document_categories;
+CREATE POLICY "document_categories_select_authenticated"
+  ON document_categories FOR SELECT
+  TO authenticated
+  USING (true);
 
 -- Documents
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;

@@ -375,7 +375,7 @@ export default function Dashboard() {
       <div className="dashboard-board-link-wrap">
         <Link to="/obligations-board" className="dashboard-board-link">
           <LayoutGrid size={18} aria-hidden />
-          Пълно табло по задължения (матрица по периоди и видове)
+          Пълно табло по задължения (редовни / извънредни по обекти)
         </Link>
       </div>
 
