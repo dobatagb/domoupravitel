@@ -32,9 +32,39 @@ function parseAmt(v: string | number): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function escapeCsvCell(s: string): string {
-  if (/[;\r\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+function escapeHtml(s: string): string {
   return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * Един HTML табличен файл с разширение .xls — Excel го отваря с UTF-8 кирилица и широки колони.
+ * CSV кодировките се държат различно по програми; този формат е стабилен за Excel.
+ */
+function buildExportXlsHtml(
+  units: UnitRow[],
+  unitTotals: Record<string, number>,
+  labelForCode: (code: string) => string
+): string {
+  const parts: string[] = [
+    '<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">',
+    '<head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+    '<style>table{border-collapse:collapse;font-family:Calibri,Arial,sans-serif}td,th{border:1px solid #ccc;padding:8px 12px}th{background:#f1f5f9;font-weight:600}.c{text-align:right}</style>',
+    '</head><body><table border="1" cellspacing="0" cellpadding="0">',
+    '<colgroup><col style="width:360pt" /><col style="width:120pt" /></colgroup>',
+    '<tr><th>Обект</th><th>Дължи Общо</th></tr>',
+  ]
+  for (const u of units) {
+    const gname = u.group?.name ?? labelForCode(u.type)
+    const label = `${gname} ${u.number}`.trim()
+    const totalDue = unitTotals[u.id] ?? 0
+    parts.push(`<tr><td>${escapeHtml(label)}</td><td class="c">${totalDue.toFixed(2)}</td></tr>`)
+  }
+  parts.push('</table></body></html>')
+  return parts.join('')
 }
 
 export default function ObligationsBoard() {
@@ -130,37 +160,13 @@ export default function ObligationsBoard() {
     return { columns, matrix, unitTotals }
   }, [units, obligations])
 
-  const exportCsv = () => {
-    if (columns.length === 0) return
-    const sep = ';'
-    const header = [
-      'Обект',
-      'Етаж',
-      'Собственик',
-      ...columns.map((c) => c.title),
-      'Общо дължимо',
-    ]
-    const lines: string[] = [header.map(escapeCsvCell).join(sep)]
-    for (const u of units) {
-      const gname = u.group?.name ?? labelForCode(u.type)
-      const label = `${gname} ${u.number}`.trim()
-      const total = unitTotals[u.id] ?? 0
-      const row = [
-        label,
-        u.floor?.trim() ?? '',
-        u.owner_name,
-        ...columns.map((c) => {
-          const v = matrix[u.id]?.[c.key] ?? 0
-          return v > 0.005 ? v.toFixed(2).replace('.', ',') : ''
-        }),
-        total.toFixed(2).replace('.', ','),
-      ]
-      lines.push(row.map(escapeCsvCell).join(sep))
-    }
-    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const handleExport = () => {
+    if (units.length === 0) return
+    const html = buildExportXlsHtml(units, unitTotals, labelForCode)
+    const blob = new Blob(['\uFEFF' + html], { type: 'application/vnd.ms-excel' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `tablo-zadalzheniya-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `tablo-zadalzheniya-${new Date().toISOString().slice(0, 10)}.xls`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -181,7 +187,8 @@ export default function ObligationsBoard() {
         Сумите по обект са <strong>агрегирани по вид</strong> (редовни / извънредни), без отделна колона за всеки
         период — така таблицата остава четима и след много години. Показват се само редове с остатък &gt; 0 поне при
         един обект. Последната колона е общо дължимо по обект. При плащане приспадането в системата е: първо
-        извънредни, после редовни (най-старите първи).
+        извънредни, после редовни (най-старите първи). <strong>Export</strong> тегли таблица за Excel (.xls) с колони{' '}
+        <strong>Обект</strong> и <strong>Дължи Общо</strong> (сумарно дължимо по обекта, като в колоната „Общо дължимо“).
       </p>
 
       {loadError && (
@@ -193,11 +200,11 @@ export default function ObligationsBoard() {
         </div>
       )}
 
-      {columns.length > 0 && (
+      {units.length > 0 && (
         <div className="obligations-board-toolbar">
-          <button type="button" className="btn-secondary obligations-board-export" onClick={exportCsv}>
+          <button type="button" className="btn-secondary obligations-board-export" onClick={handleExport}>
             <Download size={18} aria-hidden />
-            Експорт CSV (Excel)
+            Export
           </button>
         </div>
       )}

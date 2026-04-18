@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Link } from 'react-router-dom'
-import { Building2, TrendingUp, TrendingDown, FileText, Wallet, CreditCard, LayoutGrid } from 'lucide-react'
+import { Building2, TrendingUp, TrendingDown, FileText, CreditCard, LayoutGrid } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
@@ -25,18 +25,17 @@ type ViewerPaymentRow = {
 }
 
 export default function Dashboard() {
-  const { canEdit, userRole, user } = useAuth()
+  const { userRole, user } = useAuth()
   const isViewer = userRole === 'viewer'
   const [stats, setStats] = useState({
     totalUnits: 0,
     /** Сума от плащания (payments), статус „платено“ — постъпили в касата от Задължения */
     totalPayments: 0,
+    /** Редове от таблица income (Финанси → Други приходи), вкл. начална сума като приход при нужда */
+    totalOtherIncome: 0,
     totalExpenses: 0,
     totalDocuments: 0,
   })
-  const [cashOpening, setCashOpening] = useState(0)
-  const [cashDraft, setCashDraft] = useState('')
-  const [cashSaving, setCashSaving] = useState(false)
 
   const [viewerBuildingRows, setViewerBuildingRows] = useState<ViewerBuildingRow[]>([])
   const [viewerMyDue, setViewerMyDue] = useState(0)
@@ -109,24 +108,21 @@ export default function Dashboard() {
         docsCount = count || 0
       }
 
-      let opening = 0
-      try {
-        const { data: settings, error } = await supabaseQuery(() =>
-          supabase.from('app_settings').select('cash_opening_balance').eq('id', 1).maybeSingle()
-        )
-        if (!error && settings && settings.cash_opening_balance != null) {
-          const n = Number(settings.cash_opening_balance)
-          opening = Number.isFinite(n) ? n : 0
-        }
-      } catch {
-        opening = 0
+      let incQuery = supabase.from('income').select('amount')
+      if (scope !== 'all') {
+        incQuery = incQuery.gte('date', `${scope}-01-01`).lte('date', `${scope}-12-31`)
+      }
+      const { data: incomeData } = await supabaseQuery(() => incQuery)
+      let totalOtherIncome = 0
+      for (const row of incomeData || []) {
+        const r = row as { amount: number | string }
+        totalOtherIncome += Number(r.amount) || 0
       }
 
-      setCashOpening(opening)
-      setCashDraft(String(opening))
       setStats({
         totalUnits: unitsCount || 0,
         totalPayments,
+        totalOtherIncome,
         totalExpenses,
         totalDocuments: docsCount || 0,
       })
@@ -206,41 +202,7 @@ export default function Dashboard() {
     }
   }
 
-  const saveCashOpening = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!canEdit()) return
-    const n = parseFloat(cashDraft.replace(',', '.'))
-    if (Number.isNaN(n) || n < 0) {
-      alert('Въведи валидна сума (≥ 0).')
-      return
-    }
-    setCashSaving(true)
-    try {
-      const { error } = await supabaseQuery(() =>
-        supabase.from('app_settings').upsert(
-          { id: 1, cash_opening_balance: n, updated_at: new Date().toISOString() },
-          { onConflict: 'id' }
-        )
-      )
-      if (error) throw error
-      setCashOpening(n)
-      setCashDraft(String(n))
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Грешка при запис'
-      alert(
-        msg.includes('app_settings') || msg.includes('relation')
-          ? `${msg}\n\nИзпълни миграцията database_migrations/017_app_settings_cash_opening.sql в Supabase.`
-          : msg
-      )
-    } finally {
-      setCashSaving(false)
-    }
-  }
-
-  const balance =
-    statsYear === 'all'
-      ? cashOpening + stats.totalPayments - stats.totalExpenses
-      : stats.totalPayments - stats.totalExpenses
+  const balance = stats.totalOtherIncome + stats.totalPayments - stats.totalExpenses
 
   return (
     <div className="dashboard">
@@ -258,7 +220,7 @@ export default function Dashboard() {
         <span className="dashboard-year-hint" style={{ fontSize: '0.8125rem', color: 'var(--text-light)' }}>
           {statsYear === 'all'
             ? 'Показват се всички записи.'
-            : `Филтър по календарна година за плащания (дата на плащане), разходи и дата на документ.`}
+            : `Филтър по календарна година за плащания (дата на плащане), други приходи (дата), разходи и дата на документ.`}
         </span>
       </div>
 
@@ -306,48 +268,12 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="dashboard-cash-panel">
-        <div className="dashboard-cash-head">
-          <Wallet size={22} className="dashboard-cash-icon" aria-hidden />
-          <h2>Начална наличност в касата</h2>
-        </div>
-        <p className="dashboard-cash-hint">
-          Сума в касата преди записите в приложението (без превалутиране). Балансът по-долу = тази сума +
-          постъпили плащания от страницата „Задължения“ (статус платено) − разходи от „Разходи“.
-          {statsYear !== 'all' && (
-            <>
-              {' '}
-              При избор на конкретна година по-долу балансът е <strong>нето за годината</strong> (без начална
-              наличност).
-            </>
-          )}
-        </p>
-        {canEdit() ? (
-          <form className="dashboard-cash-form" onSubmit={saveCashOpening}>
-            <label htmlFor="cash-opening">Сума (€)</label>
-            <div className="dashboard-cash-row">
-              <input
-                id="cash-opening"
-                type="text"
-                inputMode="decimal"
-                value={cashDraft}
-                onChange={(e) => setCashDraft(e.target.value)}
-                placeholder="0"
-              />
-              <button type="submit" className="btn-primary" disabled={cashSaving}>
-                {cashSaving ? 'Запис…' : 'Запази'}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <p className="dashboard-cash-readonly">
-            <strong>{cashOpening.toFixed(2)} €</strong>
-          </p>
-        )}
-      </div>
-
       <div className="balance-card">
-        <h2>{statsYear === 'all' ? 'Обща наличност (очаквана каса)' : `Нето за ${statsYear} (плащания − разходи)`}</h2>
+        <h2>
+          {statsYear === 'all'
+            ? 'Обща наличност (очаквана каса)'
+            : `Очаквана каса за ${statsYear}`}
+        </h2>
         <div className={`balance-amount ${balance >= 0 ? 'positive' : 'negative'}`}>
           {balance >= 0 ? '+' : ''}
           {balance.toFixed(2)} €
@@ -355,11 +281,13 @@ export default function Dashboard() {
         <p className="balance-breakdown">
           {statsYear === 'all' ? (
             <>
-              {cashOpening.toFixed(2)} € (начало) + {stats.totalPayments.toFixed(2)} € (постъпили плащания) −{' '}
+              {stats.totalOtherIncome.toFixed(2)} € (други приходи от „Финанси“) +{' '}
+              {stats.totalPayments.toFixed(2)} € (постъпили плащания от „Задължения“) −{' '}
               {stats.totalExpenses.toFixed(2)} € (разходи)
             </>
           ) : (
             <>
+              {stats.totalOtherIncome.toFixed(2)} € (други приходи за {statsYear}) +{' '}
               {stats.totalPayments.toFixed(2)} € (постъпили плащания за {statsYear}) −{' '}
               {stats.totalExpenses.toFixed(2)} € (разходи за {statsYear})
             </>
@@ -367,8 +295,8 @@ export default function Dashboard() {
         </p>
         <p className="balance-description">
           {balance >= 0
-            ? 'Положителен баланс спрямо записаните движения.'
-            : 'Отрицателен баланс — преразход спрямо началото и записите.'}
+            ? 'Положителен баланс спрямо записаните приходи, плащания и разходи.'
+            : 'Отрицателен баланс — преразход спрямо записаните приходи, плащания и разходи.'}
         </p>
       </div>
 
