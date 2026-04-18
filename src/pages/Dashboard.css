@@ -63,6 +63,23 @@
   color: var(--text);
 }
 
+.dashboard-board-link-wrap {
+  margin-bottom: 2rem;
+}
+
+.dashboard-board-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dashboard-board-link:hover {
+  text-decoration: underline;
+}
+
 .balance-card {
   background: var(--surface);
   border-radius: 0.75rem;

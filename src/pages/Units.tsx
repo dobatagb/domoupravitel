@@ -19,6 +19,7 @@ interface Unit {
   tenant_email: string | null
   tenant_phone: string | null
   notes: string | null
+  floor?: string | null
   opening_balance?: number | string | null
   created_at: string
   group?: UnitGroup | null
@@ -49,6 +50,7 @@ export default function Units() {
     tenant_email: '',
     tenant_phone: '',
     notes: '',
+    floor: '',
     opening_balance: '0',
   })
 
@@ -198,6 +200,7 @@ export default function Units() {
         tenant_email: formData.tenant_email || null,
         tenant_phone: formData.tenant_phone || null,
         notes: formData.notes || null,
+        floor: formData.floor.trim() || null,
         opening_balance: openingBalance,
       }
 
@@ -244,6 +247,7 @@ export default function Units() {
       tenant_email: unit.tenant_email || '',
       tenant_phone: unit.tenant_phone || '',
       notes: unit.notes || '',
+      floor: unit.floor ?? '',
       opening_balance:
         unit.opening_balance != null && unit.opening_balance !== ''
           ? String(unit.opening_balance)
@@ -280,6 +284,7 @@ export default function Units() {
       tenant_email: '',
       tenant_phone: '',
       notes: '',
+      floor: '',
       opening_balance: '0',
     })
   }
@@ -389,6 +394,12 @@ export default function Units() {
                   <span className="detail-label">Площ:</span>
                   <span className="detail-value">{unit.area} м²</span>
                 </div>
+                {unit.floor?.trim() && (
+                  <div className="detail-item">
+                    <span className="detail-label">Етаж:</span>
+                    <span className="detail-value">{unit.floor}</span>
+                  </div>
+                )}
                 <div className="detail-item">
                   <span className="detail-label">Собственик:</span>
                   <span className="detail-value">{unit.owner_name}</span>
@@ -493,6 +504,25 @@ export default function Units() {
                   disabled={isViewer}
                 />
               </div>
+
+              {isViewer && editingUnit?.floor?.trim() && (
+                <div className="form-group">
+                  <label>Етаж</label>
+                  <input type="text" value={editingUnit.floor ?? ''} readOnly disabled />
+                </div>
+              )}
+
+              {!isViewer && (
+                <div className="form-group">
+                  <label>Етаж</label>
+                  <input
+                    type="text"
+                    value={formData.floor}
+                    onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+                    placeholder="Напр. 5, партер, мансарда"
+                  />
+                </div>
+              )}
 
               <div className="form-section">
                 <h3>Собственик</h3>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Building2, TrendingUp, TrendingDown, FileText, Wallet, CreditCard } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Building2, TrendingUp, TrendingDown, FileText, Wallet, CreditCard, LayoutGrid } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
@@ -301,6 +302,13 @@ export default function Dashboard() {
             ? 'Положителен баланс спрямо записаните движения.'
             : 'Отрицателен баланс — преразход спрямо началото и записите.'}
         </p>
+      </div>
+
+      <div className="dashboard-board-link-wrap">
+        <Link to="/obligations-board" className="dashboard-board-link">
+          <LayoutGrid size={18} aria-hidden />
+          Пълно табло по задължения (матрица по периоди и видове)
+        </Link>
       </div>
 
       {isViewer && (

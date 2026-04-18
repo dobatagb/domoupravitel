@@ -1,0 +1,148 @@
+.obligations-board-page {
+  animation: fadeIn 0.25s ease;
+}
+
+.obligations-board-page h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.obligations-board-sub {
+  color: var(--text-light);
+  margin-bottom: 1.25rem;
+  max-width: 52rem;
+  line-height: 1.45;
+}
+
+.obligations-board-wrap {
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.obligations-board-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.obligations-board-table th,
+.obligations-board-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.obligations-board-table th:first-child,
+.obligations-board-table td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 4px 0 8px -4px rgba(0, 0, 0, 0.08);
+  min-width: 10rem;
+}
+
+.obligations-board-table thead th {
+  background: var(--surface);
+  font-weight: 600;
+  color: var(--text);
+  vertical-align: bottom;
+}
+
+.obligations-board-table thead th.col-extra {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--danger);
+}
+
+.obligations-board-table tbody tr:hover td {
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.obligations-board-table tbody tr:hover td:first-child {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.obligations-board-table td.cell-empty {
+  color: var(--text-light);
+}
+
+.obligations-board-table td.cell-extra {
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.obligations-board-table th.col-total {
+  background: rgba(100, 116, 139, 0.12);
+  font-weight: 700;
+}
+
+.obligations-board-table td.col-total {
+  font-weight: 600;
+  background: rgba(100, 116, 139, 0.06);
+}
+
+.obligations-board-unit-title {
+  font-weight: 600;
+}
+
+.obligations-board-owner {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  font-weight: 400;
+}
+
+.obligations-board-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-light);
+}
+
+.obligations-board-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-light);
+}
+
+.obligations-board-legend span.extra {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.obligations-board-page .balance-owed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.obligations-board-page .balance-ok {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.load-error-banner {
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

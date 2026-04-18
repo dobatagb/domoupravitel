@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Home, Building2, TrendingDown, FileText, LogOut, CreditCard, Tags, CalendarRange, Users } from 'lucide-react'
+import { Home, Building2, TrendingDown, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid } from 'lucide-react'
 import './Layout.css'
 
 export default function Layout() {
@@ -13,6 +13,7 @@ export default function Layout() {
         { path: '/', label: 'Начало', icon: Home },
         { path: '/units', label: 'Мои единици', icon: Building2 },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
+        { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/documents', label: 'Документи', icon: FileText },
       ]
@@ -21,6 +22,7 @@ export default function Layout() {
         { path: '/units', label: 'Единици', icon: Building2 },
         { path: '/users', label: 'Потребители', icon: Users },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
+        { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/documents', label: 'Документи', icon: FileText },
         { path: '/nomenclatures', label: 'Номенклатури', icon: Tags },
