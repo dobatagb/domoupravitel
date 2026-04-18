@@ -9,7 +9,7 @@ import './Expenses.css'
 
 export default function Finances() {
   const [year, setYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
-  const [tab, setTab] = useState<'income' | 'expenses'>('income')
+  const [tab, setTab] = useState<'income' | 'expenses'>('expenses')
   const [incomeSum, setIncomeSum] = useState(0)
   const [expenseSum, setExpenseSum] = useState(0)
 
@@ -53,7 +53,11 @@ export default function Finances() {
             <Wallet size={28} style={{ verticalAlign: 'middle', marginRight: 8 }} aria-hidden />
             Финанси
           </h1>
-          <p>Приходи и разходи на едно място с обобщение по избрана календарна година.</p>
+          <p>
+            Обобщение по избрана календарна година. Постъпленията от такси и месечни задължения се записват в{' '}
+            <strong>Задължения</strong> (плащания). Табът „Други приходи“ е за допълнителни редове в таблицата приходи
+            (входна такса и др.), ако ги ползвате.
+          </p>
         </div>
       </div>
 
@@ -85,7 +89,7 @@ export default function Finances() {
 
       <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '1.25rem' }}>
         <button type="button" style={tabBtn(tab === 'income')} onClick={() => setTab('income')}>
-          Приходи
+          Други приходи
         </button>
         <button type="button" style={tabBtn(tab === 'expenses')} onClick={() => setTab('expenses')}>
           Разходи

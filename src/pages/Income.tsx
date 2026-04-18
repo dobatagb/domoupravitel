@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
-import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
+import type { FinanceYearScope } from '../components/YearScopeSelect'
 import './Income.css'
 import './Expenses.css'
 
@@ -215,7 +215,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
               <th>Дата</th>
               <th>Тип</th>
               <th>Описание</th>
-              <th>Единица</th>
+              <th>Обект</th>
               <th>Сума</th>
               {canEdit() && <th>Действия</th>}
             </tr>
@@ -299,7 +299,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
                 <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
               </div>
               <div className="form-group">
-                <label>Единица (опционално)</label>
+                <label>Обект (опционално)</label>
                 <select value={formData.unit_id} onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}>
                   <option value="">—</option>
                   {units.map((u) => (
@@ -330,24 +330,5 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
         </div>
       )}
     </>
-  )
-}
-
-export default function IncomePage() {
-  const [year, setYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
-
-  return (
-    <div className="income-page">
-      <div className="page-header">
-        <div>
-          <h1>Приходи</h1>
-          <p>Регистрирани приходи по тип. Филтрирайте по календарна година.</p>
-        </div>
-      </div>
-      <div className="page-toolbar">
-        <YearScopeSelect value={year} onChange={setYear} id="income-year" />
-      </div>
-      <IncomeRecords year={year} />
-    </div>
   )
 }

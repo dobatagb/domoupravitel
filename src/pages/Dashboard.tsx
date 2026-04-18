@@ -268,7 +268,7 @@ export default function Dashboard() {
             <Building2 size={24} color="var(--primary)" />
           </div>
           <div className="stat-content">
-            <div className="stat-label">Единици</div>
+            <div className="stat-label">Обекти</div>
             <div className="stat-value">{stats.totalUnits}</div>
           </div>
         </div>
@@ -382,12 +382,12 @@ export default function Dashboard() {
       {isViewer && (
         <>
           <div className="dashboard-viewer-panel">
-            <h2>Вашето задължение (свързани единици)</h2>
+            <h2>Вашето задължение (свързани обекти)</h2>
             {viewerSnapshotLoading ? (
               <p className="dashboard-viewer-muted">Зареждане…</p>
             ) : !viewerHasLinkedUnits ? (
               <p className="dashboard-viewer-muted">
-                Нямате свързани единици към акаунта. Помолете домоуправителя да ви добави към вашия обект —
+                Нямате свързани обекти към акаунта. Помолете домоуправителя да ви добави към вашия обект —
                 тогава ще виждате личното си задължение и плащанията си.
               </p>
             ) : (
@@ -398,28 +398,28 @@ export default function Dashboard() {
                     оставащи задължения).
                   </>
                 ) : (
-                  <>По вашите свързани единици няма остатък по задължения към момента.</>
+                  <>По вашите свързани обекти няма остатък по задължения към момента.</>
                 )}
               </div>
             )}
           </div>
 
           <div className="dashboard-viewer-panel">
-            <h2>Справка по единици (цялата сграда)</h2>
+            <h2>Справка по обекти (цялата сграда)</h2>
             <p className="dashboard-viewer-muted">
               Собствениците виждат обобщена информация: текущо дължимо по задължения и постъпили плащания по
-              единица.
+              обект.
             </p>
             {viewerSnapshotLoading ? (
               <p className="dashboard-viewer-muted">Зареждане…</p>
             ) : viewerBuildingRows.length === 0 ? (
-              <p className="dashboard-viewer-muted">Няма единици.</p>
+              <p className="dashboard-viewer-muted">Няма обекти.</p>
             ) : (
               <div className="dashboard-table-wrap">
                 <table className="dashboard-table">
                   <thead>
                     <tr>
-                      <th>Единица</th>
+                      <th>Обект</th>
                       <th>Собственик</th>
                       <th className="num">Дължи (€)</th>
                       <th className="num">Платено (€)</th>
@@ -448,14 +448,14 @@ export default function Dashboard() {
             {viewerSnapshotLoading ? (
               <p className="dashboard-viewer-muted">Зареждане…</p>
             ) : viewerMyPayments.length === 0 ? (
-              <p className="dashboard-viewer-muted">Няма регистрирани плащания по вашите единици.</p>
+              <p className="dashboard-viewer-muted">Няма регистрирани плащания по вашите обекти.</p>
             ) : (
               <div className="dashboard-table-wrap">
                 <table className="dashboard-table">
                   <thead>
                     <tr>
                       <th>Дата</th>
-                      <th>Единица</th>
+                      <th>Обект</th>
                       <th className="num">Сума (€)</th>
                     </tr>
                   </thead>

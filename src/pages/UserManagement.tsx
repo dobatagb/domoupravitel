@@ -209,7 +209,7 @@ export default function UserManagement() {
       } else {
         setIgnoreRoleUpdateFlag(false)
         alert(
-          'Акаунтът е създаден. Ако е включено потвърждение по имейл, потребителят трябва да потвърди преди вход. Можеш да му зададеш единици веднага.'
+          'Акаунтът е създаден. Ако е включено потвърждение по имейл, потребителят трябва да потвърди преди вход. Можеш да му зададеш обекти веднага.'
         )
       }
 
@@ -242,7 +242,7 @@ export default function UserManagement() {
             Потребители
           </h1>
           <p>
-            Входящите акаунти са отделно от единиците. За всеки потребител можеш да избереш една или повече единици
+            Входящите акаунти са отделно от обектите. За всеки потребител можеш да избереш един или повече обекти
             (апартаменти, гаражи и т.н.).
           </p>
         </div>
@@ -274,10 +274,12 @@ export default function UserManagement() {
               minLength={6}
             />
           </div>
+          <div className="form-group">
           <button type="submit" className="btn-primary" disabled={creating}>
             <Plus size={18} />
             {creating ? 'Създаване…' : 'Създай акаунт'}
           </button>
+          </div>
         </form>
         <p className="form-hint" style={{ marginTop: '0.75rem' }}>
           Ролята по подразбиране е „Преглед“. Ролята се променя в таблицата по-долу (само администратор).
@@ -291,7 +293,7 @@ export default function UserManagement() {
             <tr>
               <th>Имейл</th>
               <th>Роля</th>
-              <th>Единици</th>
+              <th>Обекти</th>
               <th>Действия</th>
             </tr>
           </thead>
@@ -318,7 +320,7 @@ export default function UserManagement() {
                 <td>
                   <button type="button" className="btn-secondary btn-small" onClick={() => openAssign(u)}>
                     <Link2 size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                    Единици
+                    Обекти
                   </button>
                 </td>
               </tr>
@@ -330,8 +332,8 @@ export default function UserManagement() {
       {assignUser && (
         <div className="modal-overlay" onClick={() => !savingLinks && setAssignUser(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-            <h2>Единици за {assignUser.email}</h2>
-            <p className="form-hint">Отметни всички единици, към които този потребител има достъп.</p>
+            <h2>Обекти за {assignUser.email}</h2>
+            <p className="form-hint">Отметни всички обекти, към които този потребител има достъп.</p>
             <div className="user-mgmt-modal-units">
               {units.map((unit) => (
                 <label key={unit.id}>
@@ -344,7 +346,7 @@ export default function UserManagement() {
                 </label>
               ))}
             </div>
-            {units.length === 0 && <p className="form-hint">Няма единици — първо добави в „Единици“.</p>}
+            {units.length === 0 && <p className="form-hint">Няма обекти — първо добави в „Обекти“.</p>}
             <div className="modal-actions">
               <button type="button" className="btn-secondary" disabled={savingLinks} onClick={() => setAssignUser(null)}>
                 Отказ

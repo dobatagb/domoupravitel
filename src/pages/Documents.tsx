@@ -196,7 +196,7 @@ export default function Documents() {
   const relatedLine = (doc: DocumentRow) => {
     if (doc.related_type === 'unit' && doc.related_id) {
       const label = unitLabels[doc.related_id]
-      return label ? <div className="document-floor">Единица: {label}</div> : null
+      return label ? <div className="document-floor">Обект: {label}</div> : null
     }
     if (!doc.related_type && !doc.related_id) {
       return <div className="document-floor">Общ за блока</div>
@@ -213,7 +213,7 @@ export default function Documents() {
       <div className="page-header">
         <div>
           <h1>Документи</h1>
-          <p>Управление на документи и снимки. По избор свържете файла с единица (апартамент) за по-лесно търсене.</p>
+          <p>Управление на документи и снимки. По избор свържете файла с обект (апартамент) за по-лесно търсене.</p>
         </div>
         {canEdit() && (
           <button type="button" className="btn-primary" onClick={openNewModal}>
@@ -299,12 +299,12 @@ export default function Documents() {
                 />
               </div>
               <div className="form-group">
-                <label>Единица (опционално)</label>
+                <label>Обект (опционално)</label>
                 <select
                   value={formData.unit_id}
                   onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
                 >
-                  <option value="">Не е свързано с конкретна единица</option>
+                  <option value="">Не е свързано с конкретен обект</option>
                   {units.map((u) => (
                     <option key={u.id} value={u.id}>
                       {unitDisplayLabel(u)}

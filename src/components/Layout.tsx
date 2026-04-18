@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Home, Building2, TrendingDown, TrendingUp, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid, History, Download, Wallet, Megaphone } from 'lucide-react'
+import { Home, Building2, TrendingDown, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid, History, Download, Wallet, Megaphone } from 'lucide-react'
 import { usePwaInstall } from '../hooks/usePwaInstall'
 import './Layout.css'
 
@@ -14,10 +14,9 @@ export default function Layout() {
     ? [
         { path: '/', label: 'Начало', icon: Home },
         { path: '/announcements', label: 'Съобщения', icon: Megaphone },
-        { path: '/units', label: 'Мои единици', icon: Building2 },
+        { path: '/units', label: 'Мои обекти', icon: Building2 },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
-        { path: '/income', label: 'Приходи', icon: TrendingUp },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/finances', label: 'Финанси', icon: Wallet },
         { path: '/documents', label: 'Документи', icon: FileText },
@@ -25,11 +24,10 @@ export default function Layout() {
     : [
         { path: '/', label: 'Начало', icon: Home },
         { path: '/announcements', label: 'Съобщения', icon: Megaphone },
-        { path: '/units', label: 'Единици', icon: Building2 },
+        { path: '/units', label: 'Обекти', icon: Building2 },
         { path: '/users', label: 'Потребители', icon: Users },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
-        { path: '/income', label: 'Приходи', icon: TrendingUp },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/finances', label: 'Финанси', icon: Wallet },
         { path: '/movements', label: 'Движения', icon: History },

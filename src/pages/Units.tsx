@@ -257,7 +257,7 @@ export default function Units() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Сигурни ли сте, че искате да изтриете тази единица?')) return
+    if (!confirm('Сигурни ли сте, че искате да изтриете този обект?')) return
 
     try {
       const { error } = await supabase.from('units').delete().eq('id', id)
@@ -309,7 +309,7 @@ export default function Units() {
     <div className="units-page">
       <div className="page-header">
         <div>
-          <h1>{isViewer ? 'Мои единици' : 'Единици'}</h1>
+          <h1>{isViewer ? 'Мои обекти' : 'Обекти'}</h1>
           <p>
             {isViewer
               ? 'Контакти на собственик и наемател по вашите обекти. Група, номер, площ и задължения се управляват от домоуправителя.'
@@ -319,7 +319,7 @@ export default function Units() {
         {canEdit() && (
           <button className="btn-primary" onClick={openNewModal}>
             <Plus size={20} />
-            Добави единица
+            Добави обект
           </button>
         )}
       </div>
@@ -342,7 +342,7 @@ export default function Units() {
             </select>
           </div>
           <div className="units-count">
-            Показване: {filteredUnits.length} от {units.length} единици
+            Показване: {filteredUnits.length} от {units.length} обекта
           </div>
         </div>
       )}
@@ -351,8 +351,8 @@ export default function Units() {
         {filteredUnits.length === 0 ? (
           <div className="empty-state">
             {isViewer
-              ? 'Няма свързани единици към вашия акаунт. Помолете домоуправителя да ви добави към вашия апартамент / обект.'
-              : 'Няма регистрирани единици'}
+              ? 'Няма свързани обекти към вашия акаунт. Помолете домоуправителя да ви добави към вашия апартамент / обект.'
+              : 'Няма регистрирани обекти'}
           </div>
         ) : (
           filteredUnits.map((unit) => {
@@ -448,8 +448,8 @@ export default function Units() {
               {isViewer && editingUnit
                 ? 'Редактирай контакти'
                 : editingUnit
-                  ? 'Редактирай единица'
-                  : 'Добави единица'}
+                  ? 'Редактирай обект'
+                  : 'Добави обект'}
             </h2>
             {isViewer && (
               <p className="form-hint" style={{ marginBottom: '1rem' }}>
@@ -619,7 +619,7 @@ export default function Units() {
                       placeholder="0"
                     />
                     <small className="form-hint">
-                      Сума, която едницата дължи извън текущото таксуване по периоди (напр. стари задължения). Намаляваш
+                      Сума, която обектът дължи извън текущото таксуване по периоди (напр. стари задължения). Намаляваш
                       ръчно, когато погасиш част от нея.
                     </small>
                   </div>

@@ -84,7 +84,7 @@ export default function Movements() {
         const unit = Array.isArray(u) ? u[0] : u
         const g = unit?.group
         const gname = Array.isArray(g) ? g[0]?.name : g?.name
-        const unitLabel = gname ? `${gname} ${unit?.number ?? ''}`.trim() : `Единица ${unit?.number ?? ''}`
+        const unitLabel = gname ? `${gname} ${unit?.number ?? ''}`.trim() : `Обект ${unit?.number ?? ''}`
         const paymentDate = p.payment_date as string | null
         const createdAt = p.created_at as string
         const dateStr = paymentDate ?? createdAt?.slice(0, 10) ?? null

@@ -341,7 +341,7 @@ export default function Obligations() {
   const handleCreatePayment = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!addForm.unit_id || !addForm.amount || !addForm.payment_date) {
-      alert('Попълни единица, сума и дата на плащане.')
+      alert('Попълни обект, сума и дата на плащане.')
       return
     }
     const amount = parseFloat(addForm.amount.replace(',', '.'))
@@ -351,7 +351,7 @@ export default function Obligations() {
     }
     if (maxPayForUnit != null) {
       if (maxPayForUnit <= 0) {
-        alert('Няма дължими суми за тази единица.')
+        alert('Няма дължими суми за този обект.')
         return
       }
       if (amount > maxPayForUnit + 0.005) {
@@ -654,12 +654,12 @@ export default function Obligations() {
       <div className="obligations-period-panel">
         {units.length > 0 && unitSummaryRows.length > 0 && (
           <div className="obligations-unit-summary">
-            <h2 className="obligations-summary-heading">Обобщение по единици</h2>
+            <h2 className="obligations-summary-heading">Обобщение по обекти</h2>
             <div className="table-wrap obligations-summary-table-wrap">
               <table className="obligations-summary-table">
                 <thead>
                   <tr>
-                    <th>Единица</th>
+                    <th>Обект</th>
                     <th>Група</th>
                     <th className="num" title="Сума от начислените задължения (лица на редовете)">
                       Дължи (начислено)
@@ -705,17 +705,17 @@ export default function Obligations() {
             </div>
             <p className="obligations-period-hint">
               <strong>Дължи</strong> — сума на начислените задължения; <strong>Платено</strong> — сума от плащанията със статус
-              „платено“; <strong>Остатък</strong> — текущо неплатено по редовете. Връзката „Плащания“ задава филтъра по единица
+              „платено“; <strong>Остатък</strong> — текущо неплатено по редовете. Връзката „Плащания“ задава филтъра по обект
               към списъка по-долу.
             </p>
           </div>
         )}
         {units.length === 0 && (
-          <p className="obligations-period-empty">Няма регистрирани единици.</p>
+          <p className="obligations-period-empty">Няма регистрирани обекти.</p>
         )}
         {units.length > 0 && unitSummaryRows.length === 0 && (
           <p className="obligations-period-empty">
-            Няма единици за показване — провери филтъра „Всички единици“ по-долу.
+            Няма обекти за показване — провери филтъра „Всички обекти“ по-долу.
           </p>
         )}
       </div>
@@ -728,7 +728,7 @@ export default function Obligations() {
             onChange={(e) => setFilterUnit(e.target.value)}
             className="filter-select"
           >
-            <option value="all">Всички единици</option>
+            <option value="all">Всички обекти</option>
             {units.map((unit) => (
               <option key={unit.id} value={unit.id}>
                 {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
@@ -757,7 +757,7 @@ export default function Obligations() {
               <table className="obligations-obl-table">
                 <thead>
                   <tr>
-                    <th>Единица</th>
+                    <th>Обект</th>
                     <th>Период</th>
                     <th>Вид</th>
                     <th>Заглавие</th>
@@ -823,7 +823,7 @@ export default function Obligations() {
           <table>
             <thead>
               <tr>
-                <th>Единица</th>
+                <th>Обект</th>
                 <th>Описание</th>
                 <th>Сума</th>
                 <th>Дата на плащане</th>
@@ -897,7 +897,7 @@ export default function Obligations() {
             <h2>Ново плащане</h2>
             <p className="form-hint" style={{ marginTop: 0 }}>
               Сумата се приспада автоматично по ред на задълженията (извънредни първи). Не може да надвиши неплатеното по
-              единицата.
+              обекта.
               {maxPayForUnit != null && addForm.unit_id && (
                 <>
                   {' '}
@@ -907,14 +907,14 @@ export default function Obligations() {
             </p>
             <form onSubmit={handleCreatePayment}>
               <div className="form-group">
-                <label htmlFor="add-unit">Единица *</label>
+                <label htmlFor="add-unit">Обект *</label>
                 <select
                   id="add-unit"
                   value={addForm.unit_id}
                   onChange={(e) => setAddForm({ ...addForm, unit_id: e.target.value })}
                   required
                 >
-                  <option value="">— Избери единица —</option>
+                  <option value="">— Избери обект —</option>
                   {units.map((unit) => (
                     <option key={unit.id} value={unit.id}>
                       {unit.group?.name ?? labelForCode(unit.type)} {unit.number}

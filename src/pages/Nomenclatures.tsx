@@ -153,7 +153,7 @@ export default function Nomenclatures() {
     if (!canEdit()) return
     if (
       !confirm(
-        `Изтриване на група „${g.name}“ (код: ${g.code})?\n\nВъзможно е само ако няма единици и няма такси, вързани към тази група.`
+        `Изтриване на група „${g.name}“ (код: ${g.code})?\n\nВъзможно е само ако няма обекти и няма такси, вързани към тази група.`
       )
     ) {
       return
@@ -166,7 +166,7 @@ export default function Nomenclatures() {
         .eq('group_id', g.id)
       if (cErr) throw cErr
       if (count != null && count > 0) {
-        alert(`Има ${count} единици с тази група. Първо ги прехвърли на друга група или ги изтрий.`)
+        alert(`Има ${count} обекта с тази група. Първо ги прехвърли на друга група или ги изтрий.`)
         return
       }
       const { error } = await supabase.from('unit_groups').delete().eq('id', g.id)
