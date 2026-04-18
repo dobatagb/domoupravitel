@@ -165,6 +165,83 @@
   font-size: 1.25rem;
 }
 
+.dashboard-viewer-panel {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.dashboard-viewer-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+.dashboard-inline-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.dashboard-viewer-muted {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-light);
+  line-height: 1.45;
+}
+
+.viewer-my-due {
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+}
+
+.viewer-my-due.owes {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.viewer-my-due.ok {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.dashboard-table-wrap {
+  overflow-x: auto;
+  margin-top: 0.75rem;
+}
+
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.dashboard-table th,
+.dashboard-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-table th {
+  font-weight: 600;
+  color: var(--text-light);
+  font-size: 0.8125rem;
+}
+
+.dashboard-table td.num,
+.dashboard-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

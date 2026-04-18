@@ -11,8 +11,10 @@ export default function Layout() {
   const navItems = userRole === 'viewer' 
     ? [
         { path: '/', label: 'Начало', icon: Home },
+        { path: '/units', label: 'Мои единици', icon: Building2 },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
+        { path: '/documents', label: 'Документи', icon: FileText },
       ]
     : [
         { path: '/', label: 'Начало', icon: Home },

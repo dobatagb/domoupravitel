@@ -1,11 +1,30 @@
 import { useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Building2, TrendingUp, TrendingDown, FileText, Wallet } from 'lucide-react'
+import { Building2, TrendingUp, TrendingDown, FileText, Wallet, CreditCard } from 'lucide-react'
+import { format } from 'date-fns'
+import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
+import { loadDueByUnitMap } from '../lib/buildingUnitDues'
+
+type ViewerBuildingRow = {
+  unitId: string
+  label: string
+  owner: string
+  due: number
+  paid: number
+}
+
+type ViewerPaymentRow = {
+  id: string
+  unitLabel: string
+  amount: number
+  paymentDate: string | null
+}
 
 export default function Dashboard() {
-  const { canEdit } = useAuth()
+  const { canEdit, userRole, user } = useAuth()
+  const isViewer = userRole === 'viewer'
   const [stats, setStats] = useState({
     totalUnits: 0,
     /** Сума от плащания (payments), статус „платено“ — постъпили в касата от Задължения */
@@ -17,9 +36,26 @@ export default function Dashboard() {
   const [cashDraft, setCashDraft] = useState('')
   const [cashSaving, setCashSaving] = useState(false)
 
+  const [viewerBuildingRows, setViewerBuildingRows] = useState<ViewerBuildingRow[]>([])
+  const [viewerMyDue, setViewerMyDue] = useState(0)
+  const [viewerMyPayments, setViewerMyPayments] = useState<ViewerPaymentRow[]>([])
+  const [viewerSnapshotLoading, setViewerSnapshotLoading] = useState(false)
+  const [viewerHasLinkedUnits, setViewerHasLinkedUnits] = useState(false)
+
   useEffect(() => {
     void fetchStats()
   }, [])
+
+  useEffect(() => {
+    if (!isViewer || !user?.id) {
+      setViewerBuildingRows([])
+      setViewerMyDue(0)
+      setViewerMyPayments([])
+      setViewerHasLinkedUnits(false)
+      return
+    }
+    void fetchViewerSnapshot(user.id)
+  }, [isViewer, user?.id])
 
   const fetchStats = async () => {
     try {
@@ -64,6 +100,77 @@ export default function Dashboard() {
     }
   }
 
+  const fetchViewerSnapshot = async (userId: string) => {
+    setViewerSnapshotLoading(true)
+    try {
+      const { data: links } = await supabase.from('user_unit_links').select('unit_id').eq('user_id', userId)
+      const linkedIds = new Set((links || []).map((r: { unit_id: string }) => r.unit_id))
+      setViewerHasLinkedUnits(linkedIds.size > 0)
+
+      const [{ data: units }, dueByUnit, { data: pays }] = await Promise.all([
+        supabase
+          .from('units')
+          .select('id, owner_name, number, group:group_id (name)')
+          .order('type', { ascending: true })
+          .order('number', { ascending: true }),
+        loadDueByUnitMap(),
+        supabase.from('payments').select('id, unit_id, amount, payment_date, status').eq('status', 'paid'),
+      ])
+
+      const paidByUnit: Record<string, number> = {}
+      for (const r of pays || []) {
+        const row = r as { unit_id: string; amount: number | string }
+        const v = typeof row.amount === 'string' ? parseFloat(row.amount) : Number(row.amount)
+        if (!Number.isFinite(v)) continue
+        paidByUnit[row.unit_id] = (paidByUnit[row.unit_id] ?? 0) + v
+      }
+
+      const labelById: Record<string, string> = {}
+      const rows: ViewerBuildingRow[] = (units || []).map((u) => {
+        const ug = u.group as { name?: string } | null
+        const label = [ug?.name, u.number].filter(Boolean).join(' ')
+        labelById[u.id] = label
+        return {
+          unitId: u.id,
+          label,
+          owner: u.owner_name,
+          due: dueByUnit[u.id] ?? 0,
+          paid: paidByUnit[u.id] ?? 0,
+        }
+      })
+      setViewerBuildingRows(rows)
+
+      let myDue = 0
+      for (const uid of linkedIds) {
+        myDue += dueByUnit[uid] ?? 0
+      }
+      setViewerMyDue(myDue)
+
+      const myPayList: ViewerPaymentRow[] = (pays || [])
+        .filter((p) => linkedIds.has((p as { unit_id: string }).unit_id))
+        .map((p) => {
+          const row = p as { id: string; unit_id: string; amount: number | string; payment_date: string | null }
+          const amt = typeof row.amount === 'string' ? parseFloat(row.amount) : Number(row.amount)
+          return {
+            id: row.id,
+            unitLabel: labelById[row.unit_id] ?? row.unit_id,
+            amount: Number.isFinite(amt) ? amt : 0,
+            paymentDate: row.payment_date,
+          }
+        })
+      myPayList.sort((a, b) => {
+        const da = a.paymentDate ? new Date(a.paymentDate).getTime() : 0
+        const db = b.paymentDate ? new Date(b.paymentDate).getTime() : 0
+        return db - da
+      })
+      setViewerMyPayments(myPayList)
+    } catch (e) {
+      console.error('viewer snapshot:', e)
+    } finally {
+      setViewerSnapshotLoading(false)
+    }
+  }
+
   const saveCashOpening = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canEdit()) return
@@ -100,7 +207,9 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
       <h1>Начало</h1>
-      <p className="dashboard-subtitle">Общ преглед на системата</p>
+      <p className="dashboard-subtitle">
+        {isViewer ? 'Обобщение за сградата и вашите задължения' : 'Общ преглед на системата'}
+      </p>
 
       <div className="stats-grid">
         <div className="stat-card">
@@ -193,6 +302,106 @@ export default function Dashboard() {
             : 'Отрицателен баланс — преразход спрямо началото и записите.'}
         </p>
       </div>
+
+      {isViewer && (
+        <>
+          <div className="dashboard-viewer-panel">
+            <h2>Вашето задължение (свързани единици)</h2>
+            {viewerSnapshotLoading ? (
+              <p className="dashboard-viewer-muted">Зареждане…</p>
+            ) : !viewerHasLinkedUnits ? (
+              <p className="dashboard-viewer-muted">
+                Нямате свързани единици към акаунта. Помолете домоуправителя да ви добави към вашия обект —
+                тогава ще виждате личното си задължение и плащанията си.
+              </p>
+            ) : (
+              <div className={`viewer-my-due ${viewerMyDue > 0 ? 'owes' : 'ok'}`}>
+                {viewerMyDue > 0 ? (
+                  <>
+                    Дължите общо <strong>{viewerMyDue.toFixed(2)} €</strong> по всички ваши обекти (сумарно
+                    оставащи задължения).
+                  </>
+                ) : (
+                  <>По вашите свързани единици няма остатък по задължения към момента.</>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="dashboard-viewer-panel">
+            <h2>Справка по единици (цялата сграда)</h2>
+            <p className="dashboard-viewer-muted">
+              Собствениците виждат обобщена информация: текущо дължимо по задължения и постъпили плащания по
+              единица.
+            </p>
+            {viewerSnapshotLoading ? (
+              <p className="dashboard-viewer-muted">Зареждане…</p>
+            ) : viewerBuildingRows.length === 0 ? (
+              <p className="dashboard-viewer-muted">Няма единици.</p>
+            ) : (
+              <div className="dashboard-table-wrap">
+                <table className="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Единица</th>
+                      <th>Собственик</th>
+                      <th className="num">Дължи (€)</th>
+                      <th className="num">Платено (€)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewerBuildingRows.map((r) => (
+                      <tr key={r.unitId}>
+                        <td>{r.label}</td>
+                        <td>{r.owner}</td>
+                        <td className="num">{r.due.toFixed(2)}</td>
+                        <td className="num">{r.paid.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="dashboard-viewer-panel">
+            <h2>
+              <CreditCard size={20} className="dashboard-inline-icon" aria-hidden />
+              Вашите плащания
+            </h2>
+            {viewerSnapshotLoading ? (
+              <p className="dashboard-viewer-muted">Зареждане…</p>
+            ) : viewerMyPayments.length === 0 ? (
+              <p className="dashboard-viewer-muted">Няма регистрирани плащания по вашите единици.</p>
+            ) : (
+              <div className="dashboard-table-wrap">
+                <table className="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Дата</th>
+                      <th>Единица</th>
+                      <th className="num">Сума (€)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewerMyPayments.map((p) => (
+                      <tr key={p.id}>
+                        <td>
+                          {p.paymentDate
+                            ? format(new Date(p.paymentDate), 'dd.MM.yyyy', { locale: bg })
+                            : '—'}
+                        </td>
+                        <td>{p.unitLabel}</td>
+                        <td className="num">{p.amount.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

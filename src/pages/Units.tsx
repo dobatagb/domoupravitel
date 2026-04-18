@@ -30,7 +30,8 @@ const unitSelectFields = `
         `
 
 export default function Units() {
-  const { canEdit } = useAuth()
+  const { canEdit, userRole, user } = useAuth()
+  const isViewer = userRole === 'viewer'
   const { groups, loading: groupsLoading, labelForCode } = useUnitGroups()
   const [units, setUnits] = useState<Unit[]>([])
   const [loading, setLoading] = useState(true)
@@ -53,13 +54,41 @@ export default function Units() {
 
   useEffect(() => {
     void loadData()
-  }, [])
+  }, [user?.id, userRole])
 
   const pageLoading = loading || groupsLoading
 
   const loadData = async () => {
     setLoading(true)
     try {
+      if (isViewer) {
+        if (!user?.id) {
+          setUnits([])
+          return
+        }
+        const { data: links, error: linkErr } = await supabase
+          .from('user_unit_links')
+          .select('unit_id')
+          .eq('user_id', user.id)
+        if (linkErr) throw linkErr
+        const ids = (links || []).map((r: { unit_id: string }) => r.unit_id)
+        if (ids.length === 0) {
+          setUnits([])
+          return
+        }
+        const { data, error } = await supabaseQuery(() =>
+          supabase
+            .from('units')
+            .select(unitSelectFields)
+            .in('id', ids)
+            .order('type', { ascending: true })
+            .order('number', { ascending: true })
+        )
+        if (error) throw error
+        setUnits(data || [])
+        return
+      }
+
       const { data, error } = await supabaseQuery(() =>
         supabase
           .from('units')
@@ -78,6 +107,32 @@ export default function Units() {
 
   const fetchUnits = async () => {
     try {
+      if (isViewer) {
+        if (!user?.id) {
+          setUnits([])
+          return
+        }
+        const { data: links } = await supabase
+          .from('user_unit_links')
+          .select('unit_id')
+          .eq('user_id', user.id)
+        const ids = (links || []).map((r: { unit_id: string }) => r.unit_id)
+        if (ids.length === 0) {
+          setUnits([])
+          return
+        }
+        const { data, error } = await supabaseQuery(() =>
+          supabase
+            .from('units')
+            .select(unitSelectFields)
+            .in('id', ids)
+            .order('type', { ascending: true })
+            .order('number', { ascending: true })
+        )
+        if (error) throw error
+        setUnits(data || [])
+        return
+      }
       const { data, error } = await supabaseQuery(() =>
         supabase
           .from('units')
@@ -95,6 +150,29 @@ export default function Units() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      if (isViewer && editingUnit) {
+        const { error } = await supabase
+          .from('units')
+          .update({
+            owner_name: formData.owner_name,
+            owner_email: formData.owner_email || null,
+            owner_phone: formData.owner_phone || null,
+            tenant_name: formData.tenant_name || null,
+            tenant_email: formData.tenant_email || null,
+            tenant_phone: formData.tenant_phone || null,
+            notes: formData.notes || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingUnit.id)
+
+        if (error) throw error
+        setShowModal(false)
+        setEditingUnit(null)
+        resetForm()
+        fetchUnits()
+        return
+      }
+
       const selectedGroup = groups.find((g) => g.id === formData.group_id)
       if (!selectedGroup) {
         alert('Изберете група обект.')
@@ -212,8 +290,11 @@ export default function Units() {
     setShowModal(true)
   }
 
-  const filteredUnits =
-    filterGroupId === 'all' ? units : units.filter((unit) => unit.group_id === filterGroupId)
+  const filteredUnits = isViewer
+    ? units
+    : filterGroupId === 'all'
+      ? units
+      : units.filter((unit) => unit.group_id === filterGroupId)
 
   if (pageLoading) {
     return <div>Зареждане...</div>
@@ -223,8 +304,12 @@ export default function Units() {
     <div className="units-page">
       <div className="page-header">
         <div>
-          <h1>Единици</h1>
-          <p>Управление на апартаменти, гаражи, магазини и паркоместа</p>
+          <h1>{isViewer ? 'Мои единици' : 'Единици'}</h1>
+          <p>
+            {isViewer
+              ? 'Контакти на собственик и наемател по вашите обекти. Група, номер, площ и задължения се управляват от домоуправителя.'
+              : 'Управление на апартаменти, гаражи, магазини и паркоместа'}
+          </p>
         </div>
         {canEdit() && (
           <button className="btn-primary" onClick={openNewModal}>
@@ -234,30 +319,36 @@ export default function Units() {
         )}
       </div>
 
-      <div className="filter-section">
-        <div className="filter-group">
-          <Filter size={18} />
-          <select
-            value={filterGroupId}
-            onChange={(e) => setFilterGroupId(e.target.value as string | 'all')}
-            className="filter-select"
-          >
-            <option value="all">Всички групи</option>
-            {sortedGroups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
+      {!isViewer && (
+        <div className="filter-section">
+          <div className="filter-group">
+            <Filter size={18} />
+            <select
+              value={filterGroupId}
+              onChange={(e) => setFilterGroupId(e.target.value as string | 'all')}
+              className="filter-select"
+            >
+              <option value="all">Всички групи</option>
+              {sortedGroups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="units-count">
+            Показване: {filteredUnits.length} от {units.length} единици
+          </div>
         </div>
-        <div className="units-count">
-          Показване: {filteredUnits.length} от {units.length} единици
-        </div>
-      </div>
+      )}
 
       <div className="units-grid">
         {filteredUnits.length === 0 ? (
-          <div className="empty-state">Няма регистрирани единици</div>
+          <div className="empty-state">
+            {isViewer
+              ? 'Няма свързани единици към вашия акаунт. Помолете домоуправителя да ви добави към вашия апартамент / обект.'
+              : 'Няма регистрирани единици'}
+          </div>
         ) : (
           filteredUnits.map((unit) => {
             const openingBal =
@@ -272,22 +363,24 @@ export default function Units() {
                     {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
                   </h3>
                 </div>
-                {canEdit() && (
+                {(canEdit() || isViewer) && (
                   <div className="unit-actions">
                     <button
                       className="icon-btn"
                       onClick={() => handleEdit(unit)}
-                      title="Редактирай"
+                      title={isViewer ? 'Редактирай контакти' : 'Редактирай'}
                     >
                       <Edit2 size={18} />
                     </button>
-                    <button
-                      className="icon-btn danger"
-                      onClick={() => handleDelete(unit.id)}
-                      title="Изтрий"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    {canEdit() && (
+                      <button
+                        className="icon-btn danger"
+                        onClick={() => handleDelete(unit.id)}
+                        title="Изтрий"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -340,7 +433,18 @@ export default function Units() {
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>{editingUnit ? 'Редактирай единица' : 'Добави единица'}</h2>
+            <h2>
+              {isViewer && editingUnit
+                ? 'Редактирай контакти'
+                : editingUnit
+                  ? 'Редактирай единица'
+                  : 'Добави единица'}
+            </h2>
+            {isViewer && (
+              <p className="form-hint" style={{ marginBottom: '1rem' }}>
+                Можете да променяте само данните за собственик, наемател и бележки.
+              </p>
+            )}
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label>Група обект *</label>
@@ -350,6 +454,7 @@ export default function Units() {
                     setFormData({ ...formData, group_id: e.target.value })
                   }}
                   required
+                  disabled={isViewer}
                 >
                   <option value="">Изберете…</option>
                   {sortedGroups.map((g) => (
@@ -369,6 +474,7 @@ export default function Units() {
                     setFormData({ ...formData, number: e.target.value })
                   }
                   required
+                  disabled={isViewer}
                   placeholder="Напр. 5, 12, A1"
                 />
               </div>
@@ -384,6 +490,7 @@ export default function Units() {
                   }
                   required
                   min="0.01"
+                  disabled={isViewer}
                 />
               </div>
 
@@ -467,25 +574,27 @@ export default function Units() {
                 />
               </div>
 
-              <div className="form-section">
-                <h3>Задължения</h3>
-                <div className="form-group">
-                  <label>Пренесен дълг (€)</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formData.opening_balance}
-                    onChange={(e) =>
-                      setFormData({ ...formData, opening_balance: e.target.value })
-                    }
-                    placeholder="0"
-                  />
-                  <small className="form-hint">
-                    Сума, която едницата дължи извън текущото таксуване по периоди (напр. стари задължения). Намаляваш
-                    ръчно, когато погасиш част от нея.
-                  </small>
+              {!isViewer && (
+                <div className="form-section">
+                  <h3>Задължения</h3>
+                  <div className="form-group">
+                    <label>Пренесен дълг (€)</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formData.opening_balance}
+                      onChange={(e) =>
+                        setFormData({ ...formData, opening_balance: e.target.value })
+                      }
+                      placeholder="0"
+                    />
+                    <small className="form-hint">
+                      Сума, която едницата дължи извън текущото таксуване по периоди (напр. стари задължения). Намаляваш
+                      ръчно, когато погасиш част от нея.
+                    </small>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="modal-actions">
                 <button

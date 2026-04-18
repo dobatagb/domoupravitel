@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
+import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import { useAuth } from '../contexts/AuthContext'
 import { Filter, Edit2, Plus, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
@@ -114,19 +115,10 @@ export default function Obligations() {
 
   const fetchDueByUnitFromDb = async () => {
     try {
-      const { data, error } = await supabaseQuery(() =>
-        supabase.from('unit_obligations').select('unit_id, amount_remaining')
-      )
-      if (error) throw error
-      const map: Record<string, number> = {}
-      for (const row of data || []) {
-        const r = row as { unit_id: string; amount_remaining: number | string }
-        const v = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
-        map[r.unit_id] = (map[r.unit_id] ?? 0) + (Number.isFinite(v) ? v : 0)
-      }
+      const map = await loadDueByUnitMap()
       setDueByUnit(map)
     } catch (e) {
-      console.warn('unit_obligations:', e)
+      console.warn('due by unit:', e)
       setDueByUnit({})
     }
   }
