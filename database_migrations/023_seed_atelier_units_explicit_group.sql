@@ -3,6 +3,7 @@
 -- Провери, че UUID-то е id на вашата група „Ателие“ в public.unit_groups (колона id).
 -- Изпълни в Supabase → SQL Editor.
 
+
 INSERT INTO public.units (group_id, number, area, owner_name, owner_phone, owner_email, opening_balance, notes)
 VALUES
   ('4c9f005c-cc1f-4d47-9ec6-dbed6b13c39e'::uuid, '1', 35::numeric, 'Недялка Пулевска', '0884701025', 'mar38@abv.bg', 0, NULL),
