@@ -1,0 +1,29 @@
+.income-page .page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.income-page .income-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.income-type-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--primary);
+}
+
+.income-unit-cell {
+  font-size: 0.875rem;
+  color: var(--text-light);
+}

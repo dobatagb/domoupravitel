@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import { useAuth } from '../contexts/AuthContext'
-import { Filter, Edit2, Plus, Trash2 } from 'lucide-react'
+import { Filter, Edit2, Plus, Trash2, ChevronRight } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import { useUnitGroups } from '../hooks/useUnitGroups'
@@ -112,6 +113,7 @@ const kindLabels: Record<string, string> = {
 export default function Obligations() {
   const { canEdit } = useAuth()
   const { labelForCode } = useUnitGroups()
+  const [searchParams] = useSearchParams()
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -119,6 +121,8 @@ export default function Obligations() {
   const [units, setUnits] = useState<UnitRow[]>([])
   /** Сума amount_remaining по unit_id (след миграция 015). */
   const [dueByUnit, setDueByUnit] = useState<Record<string, number>>({})
+  /** Суми от unit_obligations за колоните Начислено / Остатък. */
+  const [oblAggByUnit, setOblAggByUnit] = useState<Record<string, { orig: number; rem: number }>>({})
   const [maxPayForUnit, setMaxPayForUnit] = useState<number | null>(null)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -223,6 +227,37 @@ export default function Obligations() {
     fetchUnits()
     void fetchDueByUnitFromDb()
   }, [])
+
+  useEffect(() => {
+    void (async () => {
+      const { data, error } = await supabaseQuery(() =>
+        supabase.from('unit_obligations').select('unit_id, amount_original, amount_remaining')
+      )
+      if (error) {
+        console.warn('unit_obligations aggregate:', error)
+        setOblAggByUnit({})
+        return
+      }
+      const m: Record<string, { orig: number; rem: number }> = {}
+      for (const raw of data || []) {
+        const r = raw as { unit_id: string; amount_original: number | string; amount_remaining: number | string }
+        const o = typeof r.amount_original === 'string' ? parseFloat(r.amount_original) : Number(r.amount_original)
+        const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
+        if (!m[r.unit_id]) m[r.unit_id] = { orig: 0, rem: 0 }
+        m[r.unit_id].orig += Number.isFinite(o) ? o : 0
+        m[r.unit_id].rem += Number.isFinite(rem) ? rem : 0
+      }
+      setOblAggByUnit(m)
+    })()
+  }, [])
+
+  useEffect(() => {
+    const uid = searchParams.get('unit')
+    if (!uid || units.length === 0) return
+    if (units.some((u) => u.id === uid)) {
+      setFilterUnit(uid)
+    }
+  }, [searchParams, units])
 
   useEffect(() => {
     void fetchObligationLines()
@@ -527,6 +562,17 @@ export default function Obligations() {
     (o) => filterUnit === 'all' || o.unit_id === filterUnit
   )
 
+  const paidByUnit = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const p of payments) {
+      if (p.status !== 'paid') continue
+      const amt = typeof p.amount === 'string' ? parseFloat(p.amount) : Number(p.amount)
+      if (!Number.isFinite(amt)) continue
+      m[p.unit_id] = (m[p.unit_id] ?? 0) + amt
+    }
+    return m
+  }, [payments])
+
   const stats = {
     total: filteredPayments.reduce((sum, p) => sum + p.amount, 0),
     count: filteredPayments.length,
@@ -543,8 +589,12 @@ export default function Obligations() {
         return c !== 0 ? c : a.number.localeCompare(b.number, 'bg', { numeric: true })
       })
       .map((u) => {
-        const totalDue = dueByUnit[u.id] ?? 0
-        return { unit: u, totalDue }
+        const agg = oblAggByUnit[u.id]
+        const totalDue = dueByUnit[u.id] ?? agg?.rem ?? 0
+        const totalOrig = agg?.orig ?? 0
+        const totalRem = agg?.rem ?? totalDue
+        const paid = paidByUnit[u.id] ?? 0
+        return { unit: u, totalDue, totalOrig, totalRem, paid }
       })
   })()
 
@@ -604,37 +654,59 @@ export default function Obligations() {
       <div className="obligations-period-panel">
         {units.length > 0 && unitSummaryRows.length > 0 && (
           <div className="obligations-unit-summary">
-            <h2 className="obligations-summary-heading">Неплатено по единици</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Единица</th>
-                  <th>Група</th>
-                  <th>Неплатено</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unitSummaryRows.map(({ unit: u, totalDue }) => (
-                  <tr key={u.id}>
-                    <td>
-                      <strong>
-                        {u.group?.name ?? labelForCode(u.type)} {u.number}
-                      </strong>
-                      <div className="unit-owner">{u.owner_name}</div>
-                    </td>
-                    <td>{u.group?.name ?? '—'}</td>
-                    <td>
-                      <span className={totalDue > 0.009 ? 'balance-owed' : 'balance-ok'}>
-                        {totalDue.toFixed(2)} €
-                      </span>
-                    </td>
+            <h2 className="obligations-summary-heading">Обобщение по единици</h2>
+            <div className="table-wrap obligations-summary-table-wrap">
+              <table className="obligations-summary-table">
+                <thead>
+                  <tr>
+                    <th>Единица</th>
+                    <th>Група</th>
+                    <th className="num" title="Сума от начислените задължения (лица на редовете)">
+                      Дължи (начислено)
+                    </th>
+                    <th className="num" title="Сума от записите със статус „платено“">
+                      Платено
+                    </th>
+                    <th className="num" title="Текущо неплатено (остатък по редове)">
+                      Остатък
+                    </th>
+                    <th>Детайл</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {unitSummaryRows.map(({ unit: u, totalOrig, totalRem, paid }) => (
+                    <tr key={u.id}>
+                      <td>
+                        <strong>
+                          {u.group?.name ?? labelForCode(u.type)} {u.number}
+                        </strong>
+                        <div className="unit-owner">{u.owner_name}</div>
+                      </td>
+                      <td>{u.group?.name ?? '—'}</td>
+                      <td className="num">{totalOrig.toFixed(2)} €</td>
+                      <td className="num">{paid.toFixed(2)} €</td>
+                      <td className="num">
+                        <span className={totalRem > 0.009 ? 'balance-owed' : 'balance-ok'}>{totalRem.toFixed(2)} €</span>
+                      </td>
+                      <td>
+                        <Link
+                          to={`/obligations?unit=${u.id}`}
+                          className="obligations-summary-detail-link"
+                          onClick={() => setFilterUnit(u.id)}
+                        >
+                          Плащания
+                          <ChevronRight size={16} aria-hidden />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <p className="obligations-period-hint">
-              Колоната е сумата от всички непогасени задължения по единицата (редовни и извънредни). Редовете се създават от
-              екрана „Периоди“ и от пренесения дълг при миграцията; извънредни задължения — с отделна функция (по-късно).
+              <strong>Дължи</strong> — сума на начислените задължения; <strong>Платено</strong> — сума от плащанията със статус
+              „платено“; <strong>Остатък</strong> — текущо неплатено по редовете. Връзката „Плащания“ задава филтъра по единица
+              към списъка по-долу.
             </p>
           </div>
         )}
@@ -648,7 +720,7 @@ export default function Obligations() {
         )}
       </div>
 
-      <div className="filter-section">
+      <div className="filter-section" id="obligations-filter-anchor">
         <div className="filter-group">
           <Filter size={18} />
           <select

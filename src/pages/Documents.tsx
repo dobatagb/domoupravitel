@@ -1,73 +1,104 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
+import { openPublicStorageInNewTab, rawBodyForStorageUpload } from '../lib/storageUpload'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Download, Trash2, FileText, Image as ImageIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Documents.css'
 
-interface Document {
+interface DocumentRow {
   id: string
   name: string
   file_path: string
   file_type: string
   description: string | null
-  floor_id: string | null
+  related_type: 'expense' | 'income' | 'unit' | null
+  related_id: string | null
   created_at: string
-  floors?: { floor_number: number; apartment_number: string }
+}
+
+type UnitLabel = {
+  id: string
+  number: string | null
+  owner_name: string | null
+  group: { name: string | null } | null
+}
+
+function unitDisplayLabel(u: UnitLabel): string {
+  const g = u.group?.name
+  const n = u.number
+  return [g, n].filter(Boolean).join(' ') || u.owner_name || u.id.slice(0, 8)
 }
 
 export default function Documents() {
   const { canEdit } = useAuth()
-  const [documents, setDocuments] = useState<Document[]>([])
-  const [floors, setFloors] = useState<Array<{ id: string; floor_number: number; apartment_number: string }>>([])
+  const [documents, setDocuments] = useState<DocumentRow[]>([])
+  const [unitLabels, setUnitLabels] = useState<Record<string, string>>({})
+  const [units, setUnits] = useState<UnitLabel[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    floor_id: '',
+    unit_id: '' as string,
     file: null as File | null,
   })
 
-  useEffect(() => {
-    fetchFloors()
-    fetchDocuments()
-  }, [])
-
-  const fetchFloors = async () => {
+  const fetchUnits = useCallback(async () => {
     try {
       const { data } = await supabase
-        .from('floors')
-        .select('id, floor_number, apartment_number')
-        .order('floor_number')
-      setFloors(data || [])
+        .from('units')
+        .select('id, number, owner_name, group:group_id (name)')
+        .order('type', { ascending: true })
+        .order('number', { ascending: true })
+      setUnits(((data ?? []) as unknown) as UnitLabel[])
     } catch (error) {
-      console.error('Error fetching floors:', error)
+      console.error('Error fetching units:', error)
     }
-  }
+  }, [])
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       const { data, error } = await supabaseQuery(() =>
-        supabase
-          .from('documents')
-          .select(`
-          *,
-          floors:floor_id (floor_number, apartment_number)
-        `)
-          .order('created_at', { ascending: false })
+        supabase.from('documents').select('*').order('created_at', { ascending: false })
       )
 
       if (error) throw error
-      setDocuments(data || [])
+      const rows = (data || []) as DocumentRow[]
+      setDocuments(rows)
+
+      const unitIds = [
+        ...new Set(
+          rows.filter((d) => d.related_type === 'unit' && d.related_id).map((d) => d.related_id as string)
+        ),
+      ]
+      if (unitIds.length === 0) {
+        setUnitLabels({})
+        return
+      }
+      const { data: urows, error: uerr } = await supabase
+        .from('units')
+        .select('id, number, owner_name, group:group_id (name)')
+        .in('id', unitIds)
+      if (uerr) throw uerr
+      const map: Record<string, string> = {}
+      for (const u of ((urows ?? []) as unknown) as UnitLabel[]) {
+        map[u.id] = unitDisplayLabel(u)
+      }
+      setUnitLabels(map)
     } catch (error) {
       console.error('Error fetching documents:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void fetchUnits()
+    void fetchDocuments()
+  }, [fetchUnits, fetchDocuments])
 
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -82,24 +113,28 @@ export default function Documents() {
       const fileName = `${Math.random()}.${fileExt}`
       const filePath = `documents/${fileName}`
 
-      // Upload file to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('documents')
-        .upload(filePath, formData.file)
+      const { body: uploadBody, contentType: ct } = await rawBodyForStorageUpload(formData.file)
+      const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, uploadBody, {
+        cacheControl: '3600',
+        contentType: ct,
+        upsert: false,
+      })
 
       if (uploadError) throw uploadError
 
-      // Get public URL
       void supabase.storage.from('documents').getPublicUrl(filePath)
 
-      // Save document record
-      const { error: dbError } = await supabase.from('documents').insert({
+      const unitId = formData.unit_id.trim()
+      const payload = {
         name: formData.name || formData.file.name,
         file_path: filePath,
-        file_type: formData.file.type,
+        file_type: ct,
         description: formData.description || null,
-        floor_id: formData.floor_id || null,
-      })
+        related_type: unitId ? ('unit' as const) : null,
+        related_id: unitId || null,
+      }
+
+      const { error: dbError } = await supabase.from('documents').insert(payload)
 
       if (dbError) throw dbError
 
@@ -107,40 +142,33 @@ export default function Documents() {
       setFormData({
         name: '',
         description: '',
-        floor_id: '',
+        unit_id: '',
         file: null,
       })
-      fetchDocuments()
-    } catch (error: any) {
-      alert(error.message || 'Грешка при качване на файл')
+      void fetchDocuments()
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Грешка при качване на файл'
+      alert(msg)
     } finally {
       setUploading(false)
     }
   }
 
-
   const handleDelete = async (id: string, filePath: string) => {
     if (!confirm('Сигурни ли сте, че искате да изтриете този документ?')) return
 
     try {
-      // Delete from storage
-      const { error: storageError } = await supabase.storage
-        .from('documents')
-        .remove([filePath])
+      const { error: storageError } = await supabase.storage.from('documents').remove([filePath])
 
       if (storageError) throw storageError
 
-      // Delete from database
-      const { error: dbError } = await supabase
-        .from('documents')
-        .delete()
-        .eq('id', id)
+      const { error: dbError } = await supabase.from('documents').delete().eq('id', id)
 
       if (dbError) throw dbError
 
-      fetchDocuments()
-    } catch (error: any) {
-      alert(error.message || 'Грешка при изтриване')
+      void fetchDocuments()
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : 'Грешка при изтриване')
     }
   }
 
@@ -148,7 +176,7 @@ export default function Documents() {
     setFormData({
       name: '',
       description: '',
-      floor_id: '',
+      unit_id: '',
       file: null,
     })
     setShowModal(true)
@@ -165,6 +193,17 @@ export default function Documents() {
     return fileType.startsWith('image/')
   }
 
+  const relatedLine = (doc: DocumentRow) => {
+    if (doc.related_type === 'unit' && doc.related_id) {
+      const label = unitLabels[doc.related_id]
+      return label ? <div className="document-floor">Единица: {label}</div> : null
+    }
+    if (!doc.related_type && !doc.related_id) {
+      return <div className="document-floor">Общ за блока</div>
+    }
+    return null
+  }
+
   if (loading) {
     return <div>Зареждане...</div>
   }
@@ -174,10 +213,10 @@ export default function Documents() {
       <div className="page-header">
         <div>
           <h1>Документи</h1>
-          <p>Управление на документи и снимки</p>
+          <p>Управление на документи и снимки. По избор свържете файла с единица (апартамент) за по-лесно търсене.</p>
         </div>
         {canEdit() && (
-          <button className="btn-primary" onClick={openNewModal}>
+          <button type="button" className="btn-primary" onClick={openNewModal}>
             <Plus size={20} />
             Качи документ
           </button>
@@ -189,9 +228,7 @@ export default function Documents() {
           <div className="empty-state">Няма качени документи</div>
         ) : (
           documents.map((doc) => {
-            const { data: urlData } = supabase.storage
-              .from('documents')
-              .getPublicUrl(doc.file_path)
+            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(doc.file_path)
 
             return (
               <div key={doc.id} className="document-card">
@@ -200,18 +237,12 @@ export default function Documents() {
                     <img src={urlData.publicUrl} alt={doc.name} />
                   </div>
                 ) : (
-                  <div className="document-preview file">
-                    {getFileIcon(doc.file_type)}
-                  </div>
+                  <div className="document-preview file">{getFileIcon(doc.file_type)}</div>
                 )}
                 <div className="document-info">
                   <h3>{doc.name}</h3>
                   {doc.description && <p>{doc.description}</p>}
-                  {doc.floors && (
-                    <div className="document-floor">
-                      Етаж {doc.floors.floor_number}, Ап. {doc.floors.apartment_number}
-                    </div>
-                  )}
+                  {relatedLine(doc)}
                   <div className="document-date">
                     {format(new Date(doc.created_at), 'dd.MM.yyyy HH:mm', { locale: bg })}
                   </div>
@@ -219,17 +250,20 @@ export default function Documents() {
                 <div className="document-actions">
                   <a
                     href={urlData.publicUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="icon-btn"
                     title="Отвори"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      void openPublicStorageInNewTab(urlData.publicUrl, doc.name)
+                    }}
                   >
                     <Download size={18} />
                   </a>
                   {canEdit() && (
                     <button
+                      type="button"
                       className="icon-btn danger"
-                      onClick={() => handleDelete(doc.id, doc.file_path)}
+                      onClick={() => void handleDelete(doc.id, doc.file_path)}
                       title="Изтрий"
                     >
                       <Trash2 size={18} />
@@ -246,15 +280,13 @@ export default function Documents() {
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Качи документ</h2>
-            <form onSubmit={handleFileUpload}>
+            <form onSubmit={(e) => void handleFileUpload(e)}>
               <div className="form-group">
                 <label>Име на документ</label>
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Оставете празно за използване на името на файла"
                 />
               </div>
@@ -262,24 +294,20 @@ export default function Documents() {
                 <label>Описание (опционално)</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
                 />
               </div>
               <div className="form-group">
-                <label>Етаж (опционално)</label>
+                <label>Единица (опционално)</label>
                 <select
-                  value={formData.floor_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, floor_id: e.target.value })
-                  }
+                  value={formData.unit_id}
+                  onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
                 >
-                  <option value="">Не е свързано с етаж</option>
-                  {floors.map((floor) => (
-                    <option key={floor.id} value={floor.id}>
-                      Етаж {floor.floor_number}, Ап. {floor.apartment_number}
+                  <option value="">Не е свързано с конкретна единица</option>
+                  {units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {unitDisplayLabel(u)}
                     </option>
                   ))}
                 </select>
@@ -299,24 +327,15 @@ export default function Documents() {
                 />
                 {formData.file && (
                   <div className="file-info">
-                    Избран файл: {formData.file.name} (
-                    {(formData.file.size / 1024 / 1024).toFixed(2)} MB)
+                    Избран файл: {formData.file.name} ({(formData.file.size / 1024 / 1024).toFixed(2)} MB)
                   </div>
                 )}
               </div>
               <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowModal(false)}
-                >
+                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
                   Отказ
                 </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={uploading}
-                >
+                <button type="submit" className="btn-primary" disabled={uploading}>
                   {uploading ? 'Качване...' : 'Качи'}
                 </button>
               </div>
@@ -327,4 +346,3 @@ export default function Documents() {
     </div>
   )
 }
-

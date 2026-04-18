@@ -6,11 +6,14 @@ import Units from './pages/Units'
 import Obligations from './pages/Obligations'
 import ObligationsBoard from './pages/ObligationsBoard'
 import Expenses from './pages/Expenses'
+import Income from './pages/Income'
+import Finances from './pages/Finances'
 import Documents from './pages/Documents'
 import Nomenclatures from './pages/Nomenclatures'
 import BillingPeriods from './pages/BillingPeriods'
 import Movements from './pages/Movements'
 import UserManagement from './pages/UserManagement'
+import Announcements from './pages/Announcements'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -47,12 +50,15 @@ function AppRoutes() {
         <Route path="units" element={<Units />} />
         <Route path="obligations" element={<Obligations />} />
         <Route path="obligations-board" element={<ObligationsBoard />} />
+        <Route path="income" element={<Income />} />
         <Route path="expenses" element={<Expenses />} />
+        <Route path="finances" element={<Finances />} />
         <Route path="documents" element={<Documents />} />
         <Route path="nomenclatures" element={<Nomenclatures />} />
         <Route path="billing-periods" element={<BillingPeriods />} />
         <Route path="movements" element={<Movements />} />
         <Route path="users" element={<UserManagement />} />
+        <Route path="announcements" element={<Announcements />} />
       </Route>
     </Routes>
   )

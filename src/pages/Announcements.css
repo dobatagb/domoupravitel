@@ -1,0 +1,128 @@
+.announcements-page {
+  max-width: 52rem;
+}
+
+.announcements-error-banner {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  border-left: 4px solid var(--danger);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.announcements-error-banner p {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.announcements-error-hint {
+  font-size: 0.8125rem !important;
+  color: var(--text-light);
+  line-height: 1.45;
+}
+
+.announcements-error-banner code {
+  font-size: 0.8em;
+}
+
+.announcements-title-icon {
+  vertical-align: middle;
+  margin-right: 0.5rem;
+  color: var(--primary);
+}
+
+.announcements-form-card {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.announcements-form-card h2 {
+  margin-top: 0;
+  font-size: 1.125rem;
+}
+
+.announcements-pin-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.announcements-empty {
+  color: var(--text-light);
+  padding: 2rem 0;
+}
+
+.announcements-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.announcements-item {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+.announcements-item.pinned {
+  border-left: 4px solid var(--primary);
+}
+
+.announcements-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.announcements-item-head h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  flex: 1;
+  min-width: 12rem;
+}
+
+.announcements-item-head time {
+  font-size: 0.8125rem;
+  color: var(--text-light);
+}
+
+.announcements-pinned-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.announcements-body {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.announcements-item-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}

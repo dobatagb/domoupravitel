@@ -526,6 +526,32 @@
   font-weight: 600;
 }
 
+.obligations-summary-table-wrap {
+  overflow-x: auto;
+}
+
+.obligations-summary-table th.num,
+.obligations-summary-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.obligations-summary-detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.obligations-summary-detail-link:hover {
+  text-decoration: underline;
+}
+
 .obligations-period-hint {
   margin: 0.75rem 0 0;
   font-size: 0.8125rem;

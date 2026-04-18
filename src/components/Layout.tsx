@@ -1,29 +1,37 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Home, Building2, TrendingDown, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid, History } from 'lucide-react'
+import { Home, Building2, TrendingDown, TrendingUp, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid, History, Download, Wallet, Megaphone } from 'lucide-react'
+import { usePwaInstall } from '../hooks/usePwaInstall'
 import './Layout.css'
 
 export default function Layout() {
   const { signOut, user, userRole } = useAuth()
   const location = useLocation()
+  const { canUseNativePrompt, promptInstall, showIosAddToHomeHint } = usePwaInstall()
 
   // Viewers виждат само ограничен набор от менюта
   const navItems = userRole === 'viewer' 
     ? [
         { path: '/', label: 'Начало', icon: Home },
+        { path: '/announcements', label: 'Съобщения', icon: Megaphone },
         { path: '/units', label: 'Мои единици', icon: Building2 },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
+        { path: '/income', label: 'Приходи', icon: TrendingUp },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
+        { path: '/finances', label: 'Финанси', icon: Wallet },
         { path: '/documents', label: 'Документи', icon: FileText },
       ]
     : [
         { path: '/', label: 'Начало', icon: Home },
+        { path: '/announcements', label: 'Съобщения', icon: Megaphone },
         { path: '/units', label: 'Единици', icon: Building2 },
         { path: '/users', label: 'Потребители', icon: Users },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
+        { path: '/income', label: 'Приходи', icon: TrendingUp },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
+        { path: '/finances', label: 'Финанси', icon: Wallet },
         { path: '/movements', label: 'Движения', icon: History },
         { path: '/documents', label: 'Документи', icon: FileText },
         { path: '/nomenclatures', label: 'Номенклатури', icon: Tags },
@@ -39,6 +47,21 @@ export default function Layout() {
             <div className="user-email">{user?.email}</div>
             <div className="user-role">{userRole === 'admin' ? 'Администратор' : userRole === 'editor' ? 'Редактор' : 'Преглед'}</div>
           </div>
+          {canUseNativePrompt && (
+            <button
+              type="button"
+              className="pwa-install-btn"
+              onClick={() => void promptInstall()}
+            >
+              <Download size={18} aria-hidden />
+              <span>Инсталирай приложението</span>
+            </button>
+          )}
+          {showIosAddToHomeHint && (
+            <p className="pwa-ios-hint">
+              За икона на началния екран: <strong>Share</strong> → <strong>Добави към началния екран</strong>.
+            </p>
+          )}
         </div>
         <nav className="sidebar-nav">
           {navItems.map((item) => {

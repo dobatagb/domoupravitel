@@ -58,6 +58,15 @@ plugins: [
 2. Да сте създали Storage bucket `documents`
 3. Да сте направили bucket-а публичен
 
+### Грешка: `Bucket not found` (404) при отваряне на документ/снимка
+
+Това значи, че в проекта **няма** bucket с име **`documents`** (или не е публичен). Решение:
+
+1. В Supabase: **Storage → New bucket → име `documents` → Public bucket → Create**, **или**
+2. В **SQL Editor** изпълнете `database_migrations/034_storage_bucket_documents.sql` (или началния блок за Storage от `database_v2.sql`).
+
+След това новите качвания ще работят; старите записи в таблицата `documents` сочат към същия bucket — ако файловете не са качвани успешно преди това, може да липсват обектите в Storage.
+
 ## Проблем: Грешки с импорти
 
 Ако имате проблеми с импорти, проверете:

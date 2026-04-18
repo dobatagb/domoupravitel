@@ -5,7 +5,7 @@
 1. Отворете Supabase Dashboard: https://supabase.com/dashboard
 2. Изберете вашия проект
 3. Отидете в **SQL Editor**
-4. Копирайте целия SQL скрипт от `database.sql`
+4. Копирайте целия SQL скрипт от `database_v2.sql` (за нов проект). За съществуваща база прилагайте и миграциите от `database_migrations/` по ред.
 5. Изпълнете го (кликнете Run)
 
 ## Стъпка 2: Настройка на Storage

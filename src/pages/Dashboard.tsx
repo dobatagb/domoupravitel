@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
+import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
 
 type ViewerBuildingRow = {
   unitId: string
@@ -42,10 +43,11 @@ export default function Dashboard() {
   const [viewerMyPayments, setViewerMyPayments] = useState<ViewerPaymentRow[]>([])
   const [viewerSnapshotLoading, setViewerSnapshotLoading] = useState(false)
   const [viewerHasLinkedUnits, setViewerHasLinkedUnits] = useState(false)
+  const [statsYear, setStatsYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
 
   useEffect(() => {
-    void fetchStats()
-  }, [])
+    void fetchStats(statsYear)
+  }, [statsYear])
 
   useEffect(() => {
     if (!isViewer || !user?.id) {
@@ -58,22 +60,54 @@ export default function Dashboard() {
     void fetchViewerSnapshot(user.id)
   }, [isViewer, user?.id])
 
-  const fetchStats = async () => {
+  function paymentInScope(
+    paymentDate: string | null,
+    createdAt: string | null | undefined,
+    scope: FinanceYearScope
+  ): boolean {
+    if (scope === 'all') return true
+    const d = paymentDate || (createdAt ? createdAt.split('T')[0] : null)
+    if (!d) return false
+    const y = new Date(d).getFullYear()
+    return y === scope
+  }
+
+  const fetchStats = async (scope: FinanceYearScope) => {
     try {
       const { count: unitsCount } = await supabase
         .from('units')
         .select('*', { count: 'exact', head: true })
 
-      const { data: paymentsData } = await supabase.from('payments').select('amount').eq('status', 'paid')
-      const totalPayments =
-        paymentsData?.reduce((sum, item) => sum + (Number(item.amount) || 0), 0) || 0
+      const { data: paymentsData } = await supabase
+        .from('payments')
+        .select('amount, payment_date, created_at')
+        .eq('status', 'paid')
+      let totalPayments = 0
+      for (const item of paymentsData || []) {
+        const row = item as { amount: number | string; payment_date: string | null; created_at?: string }
+        if (!paymentInScope(row.payment_date, row.created_at ?? null, scope)) continue
+        totalPayments += Number(row.amount) || 0
+      }
 
-      const { data: expensesData } = await supabase.from('expenses').select('amount')
+      let expQuery = supabase.from('expenses').select('amount')
+      if (scope !== 'all') {
+        expQuery = expQuery.gte('date', `${scope}-01-01`).lte('date', `${scope}-12-31`)
+      }
+      const { data: expensesData } = await expQuery
       const totalExpenses = expensesData?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0
 
-      const { count: docsCount } = await supabase
-        .from('documents')
-        .select('*', { count: 'exact', head: true })
+      let docsCount = 0
+      if (scope === 'all') {
+        const { count } = await supabase.from('documents').select('*', { count: 'exact', head: true })
+        docsCount = count || 0
+      } else {
+        const { count } = await supabase
+          .from('documents')
+          .select('*', { count: 'exact', head: true })
+          .gte('created_at', `${scope}-01-01T00:00:00.000Z`)
+          .lte('created_at', `${scope}-12-31T23:59:59.999Z`)
+        docsCount = count || 0
+      }
 
       let opening = 0
       try {
@@ -203,7 +237,10 @@ export default function Dashboard() {
     }
   }
 
-  const balance = cashOpening + stats.totalPayments - stats.totalExpenses
+  const balance =
+    statsYear === 'all'
+      ? cashOpening + stats.totalPayments - stats.totalExpenses
+      : stats.totalPayments - stats.totalExpenses
 
   return (
     <div className="dashboard">
@@ -211,6 +248,19 @@ export default function Dashboard() {
       <p className="dashboard-subtitle">
         {isViewer ? 'Обобщение за сградата и вашите задължения' : 'Общ преглед на системата'}
       </p>
+
+      <div className="dashboard-year-bar" style={{ marginBottom: '1.25rem' }}>
+        <YearScopeSelect
+          value={statsYear}
+          onChange={setStatsYear}
+          id="dashboard-stats-year"
+        />
+        <span className="dashboard-year-hint" style={{ fontSize: '0.8125rem', color: 'var(--text-light)' }}>
+          {statsYear === 'all'
+            ? 'Показват се всички записи.'
+            : `Филтър по календарна година за плащания (дата на плащане), разходи и дата на документ.`}
+        </span>
+      </div>
 
       <div className="stats-grid">
         <div className="stat-card">
@@ -228,7 +278,9 @@ export default function Dashboard() {
             <TrendingUp size={24} color="var(--success)" />
           </div>
           <div className="stat-content">
-            <div className="stat-label">Постъпили плащания</div>
+            <div className="stat-label">
+              Постъпили плащания{statsYear === 'all' ? '' : ` (${statsYear})`}
+            </div>
             <div className="stat-value">{stats.totalPayments.toFixed(2)} €</div>
           </div>
         </div>
@@ -238,7 +290,7 @@ export default function Dashboard() {
             <TrendingDown size={24} color="var(--danger)" />
           </div>
           <div className="stat-content">
-            <div className="stat-label">Разходи</div>
+            <div className="stat-label">Разходи{statsYear === 'all' ? '' : ` (${statsYear})`}</div>
             <div className="stat-value">{stats.totalExpenses.toFixed(2)} €</div>
           </div>
         </div>
@@ -248,7 +300,7 @@ export default function Dashboard() {
             <FileText size={24} color="var(--secondary)" />
           </div>
           <div className="stat-content">
-            <div className="stat-label">Документи</div>
+            <div className="stat-label">Документи{statsYear === 'all' ? '' : ` (${statsYear})`}</div>
             <div className="stat-value">{stats.totalDocuments}</div>
           </div>
         </div>
@@ -262,6 +314,13 @@ export default function Dashboard() {
         <p className="dashboard-cash-hint">
           Сума в касата преди записите в приложението (без превалутиране). Балансът по-долу = тази сума +
           постъпили плащания от страницата „Задължения“ (статус платено) − разходи от „Разходи“.
+          {statsYear !== 'all' && (
+            <>
+              {' '}
+              При избор на конкретна година по-долу балансът е <strong>нето за годината</strong> (без начална
+              наличност).
+            </>
+          )}
         </p>
         {canEdit() ? (
           <form className="dashboard-cash-form" onSubmit={saveCashOpening}>
@@ -288,14 +347,23 @@ export default function Dashboard() {
       </div>
 
       <div className="balance-card">
-        <h2>Обща наличност (очаквана каса)</h2>
+        <h2>{statsYear === 'all' ? 'Обща наличност (очаквана каса)' : `Нето за ${statsYear} (плащания − разходи)`}</h2>
         <div className={`balance-amount ${balance >= 0 ? 'positive' : 'negative'}`}>
           {balance >= 0 ? '+' : ''}
           {balance.toFixed(2)} €
         </div>
         <p className="balance-breakdown">
-          {cashOpening.toFixed(2)} € (начало) + {stats.totalPayments.toFixed(2)} € (постъпили плащания) −{' '}
-          {stats.totalExpenses.toFixed(2)} € (разходи)
+          {statsYear === 'all' ? (
+            <>
+              {cashOpening.toFixed(2)} € (начало) + {stats.totalPayments.toFixed(2)} € (постъпили плащания) −{' '}
+              {stats.totalExpenses.toFixed(2)} € (разходи)
+            </>
+          ) : (
+            <>
+              {stats.totalPayments.toFixed(2)} € (постъпили плащания за {statsYear}) −{' '}
+              {stats.totalExpenses.toFixed(2)} € (разходи за {statsYear})
+            </>
+          )}
         </p>
         <p className="balance-description">
           {balance >= 0

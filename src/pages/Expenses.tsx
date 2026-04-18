@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
+import { openPublicStorageInNewTab, rawBodyForStorageUpload, sanitizeStorageFileName } from '../lib/storageUpload'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, FileText, Paperclip } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
+import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
 import './Expenses.css'
 
 interface Expense {
@@ -29,10 +31,6 @@ const categories = [
 /** Колоната в БД остава за стари данни; новите разходи винаги се записват като equal. */
 const EXPENSE_DISTRIBUTION_LEGACY = 'equal' as const
 
-function safeStorageFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._\s-]/g, '_').slice(0, 120)
-}
-
 async function removeStorageObjectAt(path: string | null | undefined) {
   if (!path?.trim()) return
   const { error } = await supabase.storage.from('documents').remove([path])
@@ -45,8 +43,18 @@ function expenseDocumentPublicUrl(path: string | null | undefined): string | nul
   return data.publicUrl
 }
 
-export default function Expenses() {
+type ExpensesProps = {
+  /** Ако е подадено (напр. от страницата „Финанси“), филтърът по година се контролира отвън */
+  yearScope?: FinanceYearScope
+  /** Скрива заглавието и собствения селектор за година */
+  embedded?: boolean
+}
+
+export default function Expenses({ yearScope: controlledYear, embedded = false }: ExpensesProps = {}) {
   const { canEdit } = useAuth()
+  const [localYear, setLocalYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
+  const yearFilter = controlledYear !== undefined ? controlledYear : localYear
+
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -60,15 +68,14 @@ export default function Expenses() {
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null)
   const [removeAttachment, setRemoveAttachment] = useState(false)
 
-  useEffect(() => {
-    void fetchExpenses()
-  }, [])
-
-  const fetchExpenses = async () => {
+  const fetchExpenses = useCallback(async () => {
+    setLoading(true)
     try {
-      const { data, error } = await supabaseQuery(() =>
-        supabase.from('expenses').select('*').order('date', { ascending: false })
-      )
+      let q = supabase.from('expenses').select('*').order('date', { ascending: false })
+      if (yearFilter !== 'all') {
+        q = q.gte('date', `${yearFilter}-01-01`).lte('date', `${yearFilter}-12-31`)
+      }
+      const { data, error } = await supabaseQuery(() => q)
 
       if (error) throw error
       setExpenses((data as Expense[]) || [])
@@ -77,7 +84,11 @@ export default function Expenses() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [yearFilter])
+
+  useEffect(() => {
+    void fetchExpenses()
+  }, [fetchExpenses])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -112,11 +123,13 @@ export default function Expenses() {
           if (editingExpense.document_path) {
             await removeStorageObjectAt(editingExpense.document_path)
           }
-          const safe = safeStorageFileName(pendingAttachment.name)
+          const safe = sanitizeStorageFileName(pendingAttachment.name)
           const storagePath = `expenses/${editingExpense.id}/${crypto.randomUUID()}_${safe}`
-          const { error: upErr } = await supabase.storage
-            .from('documents')
-            .upload(storagePath, pendingAttachment, { cacheControl: '3600' })
+          const { body: upBody, contentType: upCt } = await rawBodyForStorageUpload(pendingAttachment)
+          const { error: upErr } = await supabase.storage.from('documents').upload(storagePath, upBody, {
+            cacheControl: '3600',
+            contentType: upCt,
+          })
           if (upErr) throw upErr
           const { error: upDb } = await supabase
             .from('expenses')
@@ -129,11 +142,13 @@ export default function Expenses() {
         if (error) throw error
         const newId = inserted?.id as string | undefined
         if (pendingAttachment && newId) {
-          const safe = safeStorageFileName(pendingAttachment.name)
+          const safe = sanitizeStorageFileName(pendingAttachment.name)
           const storagePath = `expenses/${newId}/${crypto.randomUUID()}_${safe}`
-          const { error: upErr } = await supabase.storage
-            .from('documents')
-            .upload(storagePath, pendingAttachment, { cacheControl: '3600' })
+          const { body: upBody, contentType: upCt } = await rawBodyForStorageUpload(pendingAttachment)
+          const { error: upErr } = await supabase.storage.from('documents').upload(storagePath, upBody, {
+            cacheControl: '3600',
+            contentType: upCt,
+          })
           if (upErr) throw upErr
           const { error: upDb } = await supabase
             .from('expenses')
@@ -217,31 +232,53 @@ export default function Expenses() {
     return <div>Зареждане...</div>
   }
 
+  const headerIntro = (
+    <>
+      Всяка сума е <strong>платена от общата каса</strong> (събраните плащания от собствениците). Тя се приспада от
+      наличността на „Начало“ — без разпределение по апартаменти. Може да прикачите <strong>фактура или документ</strong>{' '}
+      (PDF, снимка); собствениците виждат списъка и файла.
+    </>
+  )
+
   return (
     <div className="expenses-page">
-      <div className="page-header">
-        <div>
-          <h1>Разходи</h1>
-          <p>
-            Всяка сума е <strong>платена от общата каса</strong> (събраните плащания от собствениците). Тя се приспада от
-            наличността на „Начало“ — без разпределение по апартаменти. Може да прикачите <strong>фактура или документ</strong>{' '}
-            (PDF, снимка); собствениците виждат списъка и файла.
-          </p>
+      {!embedded && (
+        <div className="page-header">
+          <div>
+            <h1>Разходи</h1>
+            <p>{headerIntro}</p>
+          </div>
+          {canEdit() && (
+            <button type="button" className="btn-primary" onClick={openNewModal}>
+              <Plus size={20} />
+              Добави разход
+            </button>
+          )}
         </div>
-        {canEdit() && (
+      )}
+      {embedded && canEdit() && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
           <button type="button" className="btn-primary" onClick={openNewModal}>
             <Plus size={20} />
             Добави разход
           </button>
-        )}
-      </div>
+        </div>
+      )}
+      {!embedded && (
+        <div
+          className="page-toolbar"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}
+        >
+          <YearScopeSelect value={localYear} onChange={setLocalYear} id="expenses-year" />
+        </div>
+      )}
 
       <div
         className="summary-cards"
         style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}
       >
         <div className="summary-card">
-          <h3>Общо разходи</h3>
+          <h3>Общо разходи {yearFilter === 'all' ? '' : `(${yearFilter})`}</h3>
           <div className="summary-amount">{totalExpenses.toFixed(2)} €</div>
         </div>
         {Object.entries(expensesByCategory).map(([category, amount]) => (
@@ -283,9 +320,16 @@ export default function Expenses() {
                     {expense.document_path ? (
                       <a
                         href={expenseDocumentPublicUrl(expense.document_path) ?? '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         className="expense-doc-link"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          const path = expense.document_path
+                          if (!path) return
+                          const url = expenseDocumentPublicUrl(path)
+                          if (!url) return
+                          const name = expense.document_name?.trim() || path.split('/').pop() || 'file'
+                          void openPublicStorageInNewTab(url, name)
+                        }}
                       >
                         <FileText size={16} aria-hidden />
                         <span>{expense.document_name?.trim() || 'Преглед'}</span>
@@ -383,8 +427,16 @@ export default function Expenses() {
                     <span>Текущ файл: </span>
                     <a
                       href={expenseDocumentPublicUrl(editingExpense.document_path) ?? '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        const url = expenseDocumentPublicUrl(editingExpense.document_path)
+                        if (!url || !editingExpense.document_path) return
+                        const name =
+                          editingExpense.document_name?.trim() ||
+                          editingExpense.document_path.split('/').pop() ||
+                          'file'
+                        void openPublicStorageInNewTab(url, name)
+                      }}
                     >
                       {editingExpense.document_name || 'Преглед'}
                     </a>

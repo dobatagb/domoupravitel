@@ -19,8 +19,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
   global: {
     headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      // Не задавайте тук Content-Type: application/json — конфликтира със Storage upload
+      // (два различни Content-Type → „Invalid Content-Type header“ в Fastify).
+      // PostgREST заявките си слагат JSON Content-Type където трябва.
     },
   },
 })

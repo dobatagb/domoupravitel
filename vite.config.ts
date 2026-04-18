@@ -7,6 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: false,
       includeAssets: ['pwa-icon.svg', 'pwa-192.png', 'pwa-512.png', 'vite.svg'],
       manifest: {
         id: '/',
@@ -20,6 +21,8 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         lang: 'bg',
+        prefer_related_applications: false,
+        categories: ['business', 'productivity'],
         icons: [
           {
             src: '/pwa-192.png',

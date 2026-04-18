@@ -91,6 +91,26 @@ CREATE POLICY "Only admins and editors can delete storage documents"
     )
   );
 
+DROP POLICY IF EXISTS "Only admins and editors can update storage documents" ON storage.objects;
+CREATE POLICY "Only admins and editors can update storage documents"
+  ON storage.objects FOR UPDATE
+  USING (
+    bucket_id = 'documents' AND
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid()
+      AND users.role IN ('admin', 'editor')
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'documents' AND
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid()
+      AND users.role IN ('admin', 'editor')
+    )
+  );
+
 -- ============================================
 -- 1. НОМЕНКЛАТУРА: ГРУПИ ОБЕКТИ (unit_groups)
 -- ============================================
@@ -612,6 +632,9 @@ DROP POLICY IF EXISTS "income_insert_admins" ON income;
 DROP POLICY IF EXISTS "income_update_admins" ON income;
 DROP POLICY IF EXISTS "income_delete_admins" ON income;
 DROP POLICY IF EXISTS "Only admins can manage income" ON income;
+DROP POLICY IF EXISTS "income_insert_editors" ON income;
+DROP POLICY IF EXISTS "income_update_editors" ON income;
+DROP POLICY IF EXISTS "income_delete_editors" ON income;
 
 CREATE POLICY "income_select_scope"
   ON income FOR SELECT
@@ -629,36 +652,36 @@ CREATE POLICY "income_select_scope"
     )
   );
 
-CREATE POLICY "income_insert_admins"
+CREATE POLICY "income_insert_editors"
   ON income FOR INSERT
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM users u
-      WHERE u.id = auth.uid() AND u.role = 'admin'
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
     )
   );
 
-CREATE POLICY "income_update_admins"
+CREATE POLICY "income_update_editors"
   ON income FOR UPDATE
   USING (
     EXISTS (
       SELECT 1 FROM users u
-      WHERE u.id = auth.uid() AND u.role = 'admin'
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
     )
   )
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM users u
-      WHERE u.id = auth.uid() AND u.role = 'admin'
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
     )
   );
 
-CREATE POLICY "income_delete_admins"
+CREATE POLICY "income_delete_editors"
   ON income FOR DELETE
   USING (
     EXISTS (
       SELECT 1 FROM users u
-      WHERE u.id = auth.uid() AND u.role = 'admin'
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
     )
   );
 
@@ -900,13 +923,40 @@ CREATE POLICY "documents_select_scope"
   );
 
 DROP POLICY IF EXISTS "Only admins can manage documents" ON documents;
-CREATE POLICY "Only admins can manage documents"
-  ON documents FOR ALL
+DROP POLICY IF EXISTS "documents_insert_editors" ON documents;
+DROP POLICY IF EXISTS "documents_update_editors" ON documents;
+DROP POLICY IF EXISTS "documents_delete_editors" ON documents;
+
+CREATE POLICY "documents_insert_editors"
+  ON documents FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+  );
+
+CREATE POLICY "documents_update_editors"
+  ON documents FOR UPDATE
   USING (
     EXISTS (
-      SELECT 1 FROM users
-      WHERE users.id = auth.uid()
-      AND users.role = 'admin'
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
+    )
+  );
+
+CREATE POLICY "documents_delete_editors"
+  ON documents FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid() AND u.role IN ('admin', 'editor')
     )
   );
 
