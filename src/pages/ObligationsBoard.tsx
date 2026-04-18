@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useUnitGroups } from '../hooks/useUnitGroups'
-import { LayoutGrid } from 'lucide-react'
+import { Download, LayoutGrid } from 'lucide-react'
 import './ObligationsBoard.css'
 
 interface UnitRow {
@@ -29,6 +29,11 @@ function colKey(o: Pick<ObligationRow, 'kind' | 'title' | 'billing_period_id'>):
 function parseAmt(v: string | number): number {
   const n = typeof v === 'string' ? parseFloat(v) : Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+function escapeCsvCell(s: string): string {
+  if (/[;\r\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
 }
 
 export default function ObligationsBoard() {
@@ -132,6 +137,41 @@ export default function ObligationsBoard() {
     return { columns, matrix, unitTotals }
   }, [units, obligations])
 
+  const exportCsv = () => {
+    if (columns.length === 0) return
+    const sep = ';'
+    const header = [
+      'Обект',
+      'Етаж',
+      'Собственик',
+      ...columns.map((c) => `${c.title}${c.kind === 'extraordinary' ? ' (извънр.)' : ''}`),
+      'Общо дължимо',
+    ]
+    const lines: string[] = [header.map(escapeCsvCell).join(sep)]
+    for (const u of units) {
+      const gname = u.group?.name ?? labelForCode(u.type)
+      const label = `${gname} ${u.number}`.trim()
+      const total = unitTotals[u.id] ?? 0
+      const row = [
+        label,
+        u.floor?.trim() ?? '',
+        u.owner_name,
+        ...columns.map((c) => {
+          const v = matrix[u.id]?.[c.key] ?? 0
+          return v > 0.005 ? v.toFixed(2).replace('.', ',') : ''
+        }),
+        total.toFixed(2).replace('.', ','),
+      ]
+      lines.push(row.map(escapeCsvCell).join(sep))
+    }
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `tablo-zadalzheniya-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   if (loading) {
     return <div>Зареждане...</div>
   }
@@ -159,10 +199,18 @@ export default function ObligationsBoard() {
         </div>
       )}
 
-      <div className="obligations-board-legend">
-        <span>
-          Редовни колони: стандартен фон. <span className="extra">Извънредни: оцветени.</span>
-        </span>
+      <div className="obligations-board-toolbar">
+        <div className="obligations-board-legend">
+          <span>
+            Редовни колони: стандартен фон. <span className="extra">Извънредни: оцветени.</span>
+          </span>
+        </div>
+        {columns.length > 0 && (
+          <button type="button" className="btn-secondary obligations-board-export" onClick={exportCsv}>
+            <Download size={18} aria-hidden />
+            Експорт CSV (Excel)
+          </button>
+        )}
       </div>
 
       {units.length === 0 ? (

@@ -1,0 +1,86 @@
+@keyframes movementsFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.movements-page {
+  animation: movementsFadeIn 0.3s ease;
+  max-width: 1200px;
+}
+
+.movements-head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.movements-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.movements-sub {
+  color: var(--text-light);
+  margin-bottom: 1.25rem;
+}
+
+.movements-muted {
+  color: var(--text-light);
+}
+
+.movements-error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.movements-table-wrap {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow);
+}
+
+.movements-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.movements-table th,
+.movements-table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.movements-table th {
+  font-weight: 600;
+  color: var(--text-light);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.movements-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.movements-table .amt-in {
+  color: var(--success);
+}
+
+.movements-table .amt-out {
+  color: var(--danger);
+}
+
+.movements-recorder {
+  font-size: 0.875rem;
+  color: var(--text-light);
+}

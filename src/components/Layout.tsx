@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Home, Building2, TrendingDown, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid } from 'lucide-react'
+import { Home, Building2, TrendingDown, FileText, LogOut, CreditCard, Tags, CalendarRange, Users, LayoutGrid, History } from 'lucide-react'
 import './Layout.css'
 
 export default function Layout() {
@@ -24,6 +24,7 @@ export default function Layout() {
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
+        { path: '/movements', label: 'Движения', icon: History },
         { path: '/documents', label: 'Документи', icon: FileText },
         { path: '/nomenclatures', label: 'Номенклатури', icon: Tags },
         { path: '/billing-periods', label: 'Периоди', icon: CalendarRange },

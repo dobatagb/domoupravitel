@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import { useAuth } from '../contexts/AuthContext'
@@ -84,6 +84,31 @@ interface UnitRow {
   group?: { name: string; code: string } | null
 }
 
+interface ObligationLine {
+  id: string
+  unit_id: string
+  billing_period_id: string | null
+  kind: 'regular' | 'extraordinary'
+  title: string
+  amount_original: number
+  amount_remaining: number
+  sort_key: number
+  allocCount: number
+  periodName: string | null
+}
+
+function parseMoney(raw: string): number {
+  const t = raw.trim().replace(',', '.')
+  if (!t) return 0
+  const n = parseFloat(t)
+  return Number.isFinite(n) ? n : NaN
+}
+
+const kindLabels: Record<string, string> = {
+  regular: 'Редовно',
+  extraordinary: 'Извънредно',
+}
+
 export default function Obligations() {
   const { canEdit } = useAuth()
   const { labelForCode } = useUnitGroups()
@@ -113,6 +138,18 @@ export default function Obligations() {
     payment_method: '' as '' | 'cash' | 'bank_transfer' | 'card' | 'other',
   })
 
+  const [obligationLines, setObligationLines] = useState<ObligationLine[]>([])
+  const [loadingObligations, setLoadingObligations] = useState(false)
+  const [showObligationModal, setShowObligationModal] = useState(false)
+  const [editingObligation, setEditingObligation] = useState<ObligationLine | null>(null)
+  /** Сума от payment_allocations към този ред (при редакция). */
+  const [obligationPaidSum, setObligationPaidSum] = useState(0)
+  const [obligationForm, setObligationForm] = useState({
+    title: '',
+    amount_original: '',
+    amount_remaining: '',
+  })
+
   const fetchDueByUnitFromDb = async () => {
     try {
       const map = await loadDueByUnitMap()
@@ -123,11 +160,73 @@ export default function Obligations() {
     }
   }
 
+  const fetchObligationLines = useCallback(async () => {
+    if (!canEdit()) return
+    setLoadingObligations(true)
+    try {
+      const { data: rows, error } = await supabaseQuery(() =>
+        supabase.from('unit_obligations').select('*').order('sort_key', { ascending: true }).order('created_at', {
+          ascending: true,
+        })
+      )
+      if (error) throw error
+      const list = (rows || []) as Array<{
+        id: string
+        unit_id: string
+        billing_period_id: string | null
+        kind: 'regular' | 'extraordinary'
+        title: string
+        amount_original: number | string
+        amount_remaining: number | string
+        sort_key: number
+      }>
+      const ids = list.map((r) => r.id)
+      const countMap: Record<string, number> = {}
+      if (ids.length > 0) {
+        const { data: allocs } = await supabase.from('payment_allocations').select('unit_obligation_id').in('unit_obligation_id', ids)
+        for (const a of allocs || []) {
+          const id = (a as { unit_obligation_id: string }).unit_obligation_id
+          countMap[id] = (countMap[id] ?? 0) + 1
+        }
+      }
+      const periodIds = [...new Set(list.map((r) => r.billing_period_id).filter(Boolean))] as string[]
+      const periodNameMap: Record<string, string> = {}
+      if (periodIds.length > 0) {
+        const { data: periods } = await supabase.from('billing_periods').select('id, name').in('id', periodIds)
+        for (const p of periods || []) {
+          const r = p as { id: string; name: string }
+          periodNameMap[r.id] = r.name
+        }
+      }
+      const enriched: ObligationLine[] = list.map((r) => ({
+        id: r.id,
+        unit_id: r.unit_id,
+        billing_period_id: r.billing_period_id,
+        kind: r.kind,
+        title: r.title,
+        amount_original: typeof r.amount_original === 'string' ? parseFloat(r.amount_original) : Number(r.amount_original),
+        amount_remaining: typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining),
+        sort_key: r.sort_key,
+        allocCount: countMap[r.id] ?? 0,
+        periodName: r.billing_period_id ? periodNameMap[r.billing_period_id] ?? null : null,
+      }))
+      setObligationLines(enriched)
+    } catch (e) {
+      console.error('obligation lines:', e)
+    } finally {
+      setLoadingObligations(false)
+    }
+  }, [canEdit])
+
   useEffect(() => {
     fetchPayments()
     fetchUnits()
     void fetchDueByUnitFromDb()
   }, [])
+
+  useEffect(() => {
+    void fetchObligationLines()
+  }, [fetchObligationLines])
 
   const fetchPayments = async () => {
     setLoadError(null)
@@ -239,6 +338,7 @@ export default function Obligations() {
       setShowAddModal(false)
       await fetchPayments()
       await fetchDueByUnitFromDb()
+      await fetchObligationLines()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при запис'
       alert(
@@ -274,7 +374,8 @@ export default function Obligations() {
 
       setShowModal(false)
       setEditingPayment(null)
-      fetchPayments()
+      void fetchPayments()
+      void fetchObligationLines()
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Грешка при обновяване'
       alert(msg)
@@ -302,9 +403,108 @@ export default function Obligations() {
       }
       await fetchPayments()
       await fetchDueByUnitFromDb()
+      await fetchObligationLines()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при изтриване'
       alert(msg)
+    }
+  }
+
+  const openEditObligationModal = async (row: ObligationLine) => {
+    setEditingObligation(row)
+    setObligationForm({
+      title: row.title,
+      amount_original: String(row.amount_original),
+      amount_remaining: String(row.amount_remaining),
+    })
+    let paid = 0
+    try {
+      const { data: allocs, error } = await supabase.from('payment_allocations').select('amount').eq('unit_obligation_id', row.id)
+      if (error) throw error
+      for (const a of allocs || []) {
+        paid += Number((a as { amount: number | string }).amount) || 0
+      }
+    } catch (e) {
+      console.error(e)
+      paid = 0
+    }
+    setObligationPaidSum(Math.round(paid * 100) / 100)
+    setShowObligationModal(true)
+  }
+
+  const saveObligationLine = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingObligation || !canEdit()) return
+    const title = obligationForm.title.trim()
+    if (!title) {
+      alert('Въведи заглавие.')
+      return
+    }
+    const ao = parseMoney(obligationForm.amount_original)
+    if (Number.isNaN(ao) || ao < 0) {
+      alert('Оригиналната сума трябва да е число ≥ 0.')
+      return
+    }
+    const paid = obligationPaidSum
+    let ar: number
+    if (paid > 0.005) {
+      ar = Math.round(Math.max(0, ao - paid) * 100) / 100
+      if (ao < paid - 0.005) {
+        alert(`Оригиналната сума не може да е по-малка от вече приспаданото (${paid.toFixed(2)} €).`)
+        return
+      }
+    } else {
+      ar = parseMoney(obligationForm.amount_remaining)
+      if (Number.isNaN(ar) || ar < 0) {
+        alert('Остатъкът трябва да е число ≥ 0.')
+        return
+      }
+      if (ar > ao + 0.005) {
+        alert('Остатъкът не може да надвишава оригиналната сума.')
+        return
+      }
+    }
+    try {
+      const { error } = await supabase
+        .from('unit_obligations')
+        .update({
+          title,
+          amount_original: ao,
+          amount_remaining: ar,
+        })
+        .eq('id', editingObligation.id)
+      if (error) throw error
+      setShowObligationModal(false)
+      setEditingObligation(null)
+      await fetchObligationLines()
+      await fetchDueByUnitFromDb()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Грешка при запис')
+    }
+  }
+
+  const deleteObligationLine = async (row: ObligationLine) => {
+    if (!canEdit()) return
+    if (row.allocCount > 0) {
+      alert(
+        'Този ред има приспадания от плащания. Първо премахни или коригирай свързаните плащания (изтрий плащането с възстановяване), после опитай отново.'
+      )
+      return
+    }
+    if (
+      !confirm(
+        `Изтриване на задължение „${row.title}“?\n\nТова не може да се отмени. Редовните редове от период може да се възстановят при „Запази суми“ в Периоди.`
+      )
+    ) {
+      return
+    }
+    try {
+      const { error } = await supabase.from('unit_obligations').delete().eq('id', row.id)
+      if (error) throw error
+      await fetchObligationLines()
+      await fetchDueByUnitFromDb()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Грешка при изтриване')
     }
   }
 
@@ -322,6 +522,10 @@ export default function Obligations() {
     if (filterUnit !== 'all' && payment.unit_id !== filterUnit) return false
     return true
   })
+
+  const filteredObligationLines = obligationLines.filter(
+    (o) => filterUnit === 'all' || o.unit_id === filterUnit
+  )
 
   const stats = {
     total: filteredPayments.reduce((sum, p) => sum + p.amount, 0),
@@ -360,6 +564,7 @@ export default function Obligations() {
               setLoading(true)
               void fetchPayments()
               void fetchDueByUnitFromDb()
+              void fetchObligationLines()
             }}
           >
             Опитай отново
@@ -463,6 +668,81 @@ export default function Obligations() {
           Показване: {filteredPayments.length} от {payments.length} записа
         </div>
       </div>
+
+      {canEdit() && (
+        <div className="obligations-lines-panel">
+          <h2 className="obligations-lines-heading">Редове задължения по обекти</h2>
+          <p className="obligations-lines-hint">
+            Редакция на заглавие и суми; изтриване само ако няма приспадания от плащания. Редовните тарифи от период при
+            следващо „Запази суми“ в <strong>Периоди</strong> могат да се презапишат от синхронизацията.
+          </p>
+          {loadingObligations ? (
+            <p className="obligations-period-empty">Зареждане на редове…</p>
+          ) : filteredObligationLines.length === 0 ? (
+            <p className="obligations-period-empty">Няма редове за избрания филтър.</p>
+          ) : (
+            <div className="table-wrap obligations-obl-table-wrap">
+              <table className="obligations-obl-table">
+                <thead>
+                  <tr>
+                    <th>Единица</th>
+                    <th>Период</th>
+                    <th>Вид</th>
+                    <th>Заглавие</th>
+                    <th className="num">Оригинал</th>
+                    <th className="num">Остатък</th>
+                    <th className="num">Приспад.</th>
+                    {canEdit() && <th>Действия</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredObligationLines.map((row) => {
+                    const u = units.find((x) => x.id === row.unit_id)
+                    const unitLabel = u ? `${u.group?.name ?? labelForCode(u.type)} ${u.number}`.trim() : '—'
+                    const periodCell = row.periodName ?? (row.billing_period_id ? '—' : 'без период')
+                    return (
+                      <tr key={row.id}>
+                        <td>
+                          <strong>{unitLabel}</strong>
+                          {u && <div className="unit-owner">{u.owner_name}</div>}
+                        </td>
+                        <td>{periodCell}</td>
+                        <td>{kindLabels[row.kind] ?? row.kind}</td>
+                        <td>{row.title}</td>
+                        <td className="num">{row.amount_original.toFixed(2)} €</td>
+                        <td className="num">{row.amount_remaining.toFixed(2)} €</td>
+                        <td className="num">{row.allocCount > 0 ? `${row.allocCount} р.` : '—'}</td>
+                        {canEdit() && (
+                          <td>
+                            <div className="payment-row-actions">
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                title="Редактирай"
+                                onClick={() => void openEditObligationModal(row)}
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                              <button
+                                type="button"
+                                className="icon-btn danger"
+                                title="Изтрий"
+                                onClick={() => void deleteObligationLine(row)}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="payments-table">
         {filteredPayments.length === 0 ? (
@@ -627,6 +907,78 @@ export default function Obligations() {
                 </button>
                 <button type="submit" className="btn-primary">
                   Запиши плащане
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showObligationModal && editingObligation && (
+        <div className="modal-overlay" onClick={() => setShowObligationModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Редактирай задължение</h2>
+            <p className="form-hint" style={{ marginTop: 0 }}>
+              {editingObligation.kind === 'regular' && editingObligation.billing_period_id && (
+                <>
+                  Редовно задължение към период — при запис на суми в „Периоди“ редът може да се синхронизира отново.
+                  <br />
+                </>
+              )}
+              {obligationPaidSum > 0.005 && (
+                <>
+                  Приспаднато от плащания: <strong>{obligationPaidSum.toFixed(2)} €</strong> — остатъкът се изчислява
+                  автоматично от оригинал минус тази сума.
+                </>
+              )}
+            </p>
+            <form onSubmit={saveObligationLine}>
+              <div className="form-group">
+                <label htmlFor="obl-title">Заглавие *</label>
+                <input
+                  id="obl-title"
+                  value={obligationForm.title}
+                  onChange={(e) => setObligationForm((f) => ({ ...f, title: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="obl-ao">Оригинална сума (€) *</label>
+                <input
+                  id="obl-ao"
+                  type="text"
+                  inputMode="decimal"
+                  value={obligationForm.amount_original}
+                  onChange={(e) => setObligationForm((f) => ({ ...f, amount_original: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="obl-ar">Остатък (€) {obligationPaidSum > 0.005 ? '(автоматично)' : '*'}</label>
+                <input
+                  id="obl-ar"
+                  type="text"
+                  inputMode="decimal"
+                  value={
+                    obligationPaidSum > 0.005
+                      ? (() => {
+                          const ao = parseMoney(obligationForm.amount_original)
+                          if (Number.isNaN(ao)) return ''
+                          return Math.max(0, Math.round((ao - obligationPaidSum) * 100) / 100).toFixed(2)
+                        })()
+                      : obligationForm.amount_remaining
+                  }
+                  onChange={(e) => setObligationForm((f) => ({ ...f, amount_remaining: e.target.value }))}
+                  disabled={obligationPaidSum > 0.005}
+                  required={obligationPaidSum <= 0.005}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowObligationModal(false)}>
+                  Отказ
+                </button>
+                <button type="submit" className="btn-primary">
+                  Запази
                 </button>
               </div>
             </form>

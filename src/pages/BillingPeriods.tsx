@@ -5,8 +5,16 @@ import { CalendarRange, Plus, Edit2, Trash2, Copy } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import type { UnitGroup } from '../types/unitGroup'
+import { compactGroupLabel } from '../lib/unitDisplay'
 import './Units.css'
 import './BillingPeriods.css'
+
+interface UnitForOverride {
+  id: string
+  number: string
+  group_id: string
+  group?: { name: string; code: string; list_label_short: string | null } | null
+}
 
 export interface BillingPeriod {
   id: string
@@ -30,10 +38,13 @@ export default function BillingPeriods() {
   const { canEdit } = useAuth()
   const [periods, setPeriods] = useState<BillingPeriod[]>([])
   const [groups, setGroups] = useState<UnitGroup[]>([])
+  const [unitsForOverrides, setUnitsForOverrides] = useState<UnitForOverride[]>([])
   const [loading, setLoading] = useState(true)
   const [savingAmounts, setSavingAmounts] = useState(false)
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('')
   const [amountDraft, setAmountDraft] = useState<Record<string, string>>({})
+  /** Индивидуална сума по unit_id; празно = ползва се само сумата по група. */
+  const [unitOverrideDraft, setUnitOverrideDraft] = useState<Record<string, string>>({})
 
   const [showPeriodModal, setShowPeriodModal] = useState(false)
   const [editingPeriod, setEditingPeriod] = useState<BillingPeriod | null>(null)
@@ -79,6 +90,31 @@ export default function BillingPeriods() {
     })()
   }, [loadPeriods, loadGroups])
 
+  const loadUnitsForOverrides = useCallback(async () => {
+    const { data, error } = await supabaseQuery(() =>
+      supabase
+        .from('units')
+        .select('id, number, group_id, group:group_id(name, code, list_label_short)')
+        .order('type', { ascending: true })
+        .order('number', { ascending: true })
+    )
+    if (error) throw error
+    const raw = (data ?? []) as unknown[]
+    setUnitsForOverrides(
+      raw.map((row) => {
+        const r = row as UnitForOverride & { group?: { name: string; code: string; list_label_short: string | null } | unknown[] | null }
+        const g = r.group
+        const group = Array.isArray(g) ? (g[0] as UnitForOverride['group']) ?? null : g ?? null
+        return { ...r, group }
+      })
+    )
+  }, [])
+
+  useEffect(() => {
+    if (!canEdit()) return
+    void loadUnitsForOverrides().catch(console.error)
+  }, [canEdit, loadUnitsForOverrides])
+
   const loadAmountsForPeriod = useCallback(async (periodId: string) => {
     const { data, error } = await supabaseQuery(() =>
       supabase.from('period_group_amounts').select('group_id, amount').eq('period_id', periodId)
@@ -95,6 +131,29 @@ export default function BillingPeriods() {
     setAmountDraft(map)
   }, [groups])
 
+  const loadUnitOverridesForPeriod = useCallback(
+    async (periodId: string) => {
+      if (unitsForOverrides.length === 0) {
+        setUnitOverrideDraft({})
+        return
+      }
+      const { data, error } = await supabaseQuery(() =>
+        supabase.from('period_unit_amounts').select('unit_id, amount').eq('period_id', periodId)
+      )
+      if (error) throw error
+      const map: Record<string, string> = {}
+      for (const u of unitsForOverrides) {
+        map[u.id] = ''
+      }
+      for (const row of data || []) {
+        const r = row as { unit_id: string; amount: number }
+        map[r.unit_id] = String(r.amount)
+      }
+      setUnitOverrideDraft(map)
+    },
+    [unitsForOverrides]
+  )
+
   useEffect(() => {
     if (!selectedPeriodId || groups.length === 0) {
       setAmountDraft({})
@@ -102,6 +161,14 @@ export default function BillingPeriods() {
     }
     void loadAmountsForPeriod(selectedPeriodId).catch(console.error)
   }, [selectedPeriodId, groups, loadAmountsForPeriod])
+
+  useEffect(() => {
+    if (!selectedPeriodId || unitsForOverrides.length === 0) {
+      setUnitOverrideDraft({})
+      return
+    }
+    void loadUnitOverridesForPeriod(selectedPeriodId).catch(console.error)
+  }, [selectedPeriodId, unitsForOverrides, loadUnitOverridesForPeriod])
 
   const openNewPeriod = () => {
     setEditingPeriod(null)
@@ -215,6 +282,24 @@ export default function BillingPeriods() {
         if (upErr) throw upErr
       }
 
+      const { data: unitAmts, error: uaErr } = await supabase
+        .from('period_unit_amounts')
+        .select('unit_id, amount')
+        .eq('period_id', p.id)
+      if (uaErr) throw uaErr
+      if (unitAmts && unitAmts.length > 0) {
+        const urows = unitAmts.map((row: { unit_id: string; amount: number }) => ({
+          period_id: newId,
+          unit_id: row.unit_id,
+          amount: row.amount,
+          updated_at: now,
+        }))
+        const { error: uuErr } = await supabase.from('period_unit_amounts').upsert(urows, {
+          onConflict: 'period_id,unit_id',
+        })
+        if (uuErr) throw uuErr
+      }
+
       const { error: syncErr } = await supabase.rpc('sync_unit_obligations_for_period', {
         p_period_id: newId,
       })
@@ -269,6 +354,37 @@ export default function BillingPeriods() {
       })
       if (error) throw error
 
+      const clearedIds: string[] = []
+      const overrideRows: { period_id: string; unit_id: string; amount: number; updated_at: string }[] = []
+      for (const u of unitsForOverrides) {
+        const raw = (unitOverrideDraft[u.id] ?? '').trim()
+        const amt = raw ? parseAmount(raw) : 0
+        if (!raw || amt <= 0) {
+          clearedIds.push(u.id)
+        } else {
+          overrideRows.push({
+            period_id: selectedPeriodId,
+            unit_id: u.id,
+            amount: amt,
+            updated_at: now,
+          })
+        }
+      }
+      if (clearedIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from('period_unit_amounts')
+          .delete()
+          .eq('period_id', selectedPeriodId)
+          .in('unit_id', clearedIds)
+        if (delErr) throw delErr
+      }
+      if (overrideRows.length > 0) {
+        const { error: ouErr } = await supabase.from('period_unit_amounts').upsert(overrideRows, {
+          onConflict: 'period_id,unit_id',
+        })
+        if (ouErr) throw ouErr
+      }
+
       const { error: syncError } = await supabase.rpc('sync_unit_obligations_for_period', {
         p_period_id: selectedPeriodId,
       })
@@ -299,8 +415,9 @@ export default function BillingPeriods() {
             Периоди и такси по групи
           </h1>
           <p>
-            За всеки период задаваш сума по <strong>група обекти</strong>. Всички единици от групата ползват същата
-            сума за този период.
+            По подразбиране (начин 1) задаваш сума по <strong>група обекти</strong> — всички единици от групата ползват
+            същата сума. По избор (начин 2) под таблицата можеш да зададеш <strong>индивидуална сума по конкретна
+            единица</strong> за периода; тя замества тарифата по група само за този обект.
           </p>
         </div>
         {canEdit() && (
@@ -445,6 +562,60 @@ export default function BillingPeriods() {
                     </tbody>
                   </table>
                 </div>
+
+                {canEdit() && (
+                  <details className="billing-details-override">
+                    <summary className="billing-details-summary">Индивидуални суми по единица (начин 2)</summary>
+                    <p className="billing-hint">
+                      Празно поле = ползва се сумата по група от таблицата по-горе. Попълнена сума замества груповата
+                      само за този обект. Нулева стойност се третира като без индивидуална тарифа.
+                    </p>
+                    {amountsLocked ? (
+                      <p className="billing-hint billing-hint-warn">Периодът е затворен — без редакция.</p>
+                    ) : (
+                      <div className="table-wrap billing-unit-override-wrap">
+                        <table className="billing-table">
+                          <thead>
+                            <tr>
+                              <th>Обект</th>
+                              <th>По група (€)</th>
+                              <th>Индивидуална (€)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {unitsForOverrides.map((u) => {
+                              const g = groups.find((x) => x.id === u.group_id)
+                              const defAmt = parseAmount(amountDraft[u.group_id] ?? '')
+                              const label = g
+                                ? `${compactGroupLabel(g, g.code)} ${u.number}`
+                                : `${u.group?.name ?? ''} ${u.number}`
+                              return (
+                                <tr key={u.id}>
+                                  <td>{label.trim()}</td>
+                                  <td>{defAmt > 0 ? defAmt.toFixed(2) : '—'}</td>
+                                  <td>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      className="billing-amount-input"
+                                      disabled={savingAmounts}
+                                      value={unitOverrideDraft[u.id] ?? ''}
+                                      onChange={(e) =>
+                                        setUnitOverrideDraft((d) => ({ ...d, [u.id]: e.target.value }))
+                                      }
+                                      placeholder="—"
+                                    />
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </details>
+                )}
+
                 {canEdit() && !amountsLocked && (
                   <div className="billing-actions">
                     <button

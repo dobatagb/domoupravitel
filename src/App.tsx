@@ -9,6 +9,7 @@ import Expenses from './pages/Expenses'
 import Documents from './pages/Documents'
 import Nomenclatures from './pages/Nomenclatures'
 import BillingPeriods from './pages/BillingPeriods'
+import Movements from './pages/Movements'
 import UserManagement from './pages/UserManagement'
 import Layout from './components/Layout'
 
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="documents" element={<Documents />} />
         <Route path="nomenclatures" element={<Nomenclatures />} />
         <Route path="billing-periods" element={<BillingPeriods />} />
+        <Route path="movements" element={<Movements />} />
         <Route path="users" element={<UserManagement />} />
       </Route>
     </Routes>
