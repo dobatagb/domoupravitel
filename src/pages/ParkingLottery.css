@@ -1,0 +1,337 @@
+.parking-lottery-page {
+  max-width: 56rem;
+}
+
+.parking-lottery-title-icon {
+  vertical-align: middle;
+  margin-right: 0.5rem;
+  color: var(--primary);
+}
+
+.parking-lottery-error {
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  border-left: 4px solid var(--danger);
+  background: var(--surface);
+}
+
+.parking-lottery-muted {
+  color: var(--text-light);
+  margin: 0.5rem 0;
+}
+
+.parking-lottery-parking-count {
+  font-size: 0.9375rem;
+  margin: 0 0 1rem;
+}
+
+.parking-lottery-reorder-hint {
+  margin-bottom: 0.75rem !important;
+  font-size: 0.875rem;
+}
+
+.parking-lottery-cell-parking {
+  font-weight: 500;
+}
+
+.parking-lottery-th-actions {
+  width: 5.5rem;
+  text-align: center;
+}
+
+.parking-lottery-cell-actions {
+  white-space: nowrap;
+  text-align: center;
+}
+
+.parking-lottery-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  margin: 0 0.1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.parking-lottery-icon-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.parking-lottery-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.parking-lottery-followup h3 {
+  margin-top: 0;
+}
+
+.parking-lottery-followup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.parking-lottery-form-card {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.parking-lottery-form-card h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.parking-lottery-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.parking-lottery-form-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+
+.parking-lottery-form-row input[type='number'],
+.parking-lottery-form-row input[type='text'] {
+  min-width: 8rem;
+}
+
+.parking-lottery-grow {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.parking-lottery-layout {
+  display: grid;
+  grid-template-columns: minmax(11rem, 14rem) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .parking-lottery-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.parking-lottery-aside h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.parking-lottery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.parking-lottery-list li {
+  margin-bottom: 0.35rem;
+}
+
+.parking-lottery-list-btn {
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.parking-lottery-list-btn:hover {
+  border-color: var(--primary);
+}
+
+.parking-lottery-list-btn.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+}
+
+.parking-lottery-year {
+  font-weight: 600;
+}
+
+.parking-lottery-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.25rem;
+}
+
+.parking-lottery-badge.draft {
+  background: var(--border);
+  color: var(--text-light);
+}
+
+.parking-lottery-badge.done {
+  background: color-mix(in srgb, var(--primary) 25%, transparent);
+  color: var(--primary);
+}
+
+.parking-lottery-main h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.parking-lottery-meta {
+  font-weight: normal;
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+
+.parking-lottery-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.parking-lottery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.btn-danger-outline {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: transparent;
+  padding: 0.5rem 0.85rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9375rem;
+}
+
+.btn-danger-outline:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.parking-lottery-info {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.15rem;
+  margin-bottom: 1.25rem;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  border: 1px solid var(--border);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.parking-lottery-info svg {
+  flex-shrink: 0;
+  color: var(--primary);
+  margin-top: 0.1rem;
+}
+
+.parking-lottery-prev-emails {
+  margin-top: 0.65rem;
+  font-size: 0.85rem;
+  color: var(--text-light);
+  word-break: break-word;
+}
+
+.parking-lottery-card {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.parking-lottery-card h3 {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.parking-lottery-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.parking-lottery-table th,
+.parking-lottery-table td {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.parking-lottery-table th {
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+.parking-lottery-tag {
+  display: inline-block;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.35rem;
+}
+
+.parking-lottery-tag.new {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.parking-lottery-tag.repeat {
+  background: color-mix(in srgb, var(--text-light) 20%, transparent);
+}
+
+.parking-lottery-user-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.45rem 1rem;
+  margin-bottom: 1rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
+.parking-lottery-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.parking-lottery-check input {
+  flex-shrink: 0;
+}
+
+.parking-lottery-save {
+  margin-top: 0.25rem;
+}

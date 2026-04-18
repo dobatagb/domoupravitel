@@ -13,6 +13,7 @@ import BillingPeriods from './pages/BillingPeriods'
 import Movements from './pages/Movements'
 import UserManagement from './pages/UserManagement'
 import Announcements from './pages/Announcements'
+import ParkingLottery from './pages/ParkingLottery'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route path="movements" element={<Movements />} />
         <Route path="users" element={<UserManagement />} />
         <Route path="announcements" element={<Announcements />} />
+        <Route path="parking-lottery" element={<ParkingLottery />} />
       </Route>
     </Routes>
   )

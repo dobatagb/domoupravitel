@@ -17,6 +17,7 @@ import {
   Wallet,
   Megaphone,
   Settings,
+  Dices,
 } from 'lucide-react'
 import { usePwaInstall } from '../hooks/usePwaInstall'
 import './Layout.css'
@@ -75,6 +76,7 @@ export default function Layout() {
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/finances', label: 'Финанси', icon: Wallet },
         { path: '/documents', label: 'Документи', icon: FileText },
+        { path: '/parking-lottery', label: 'Томбола паркоместа', icon: Dices },
       ]
     : [
         { path: '/', label: 'Начало', icon: Home },
@@ -89,6 +91,7 @@ export default function Layout() {
         { path: '/documents', label: 'Документи', icon: FileText },
         { path: '/nomenclatures', label: 'Номенклатури', icon: Tags },
         { path: '/billing-periods', label: 'Периоди', icon: CalendarRange },
+        { path: '/parking-lottery', label: 'Томбола паркоместа', icon: Dices },
       ]
 
   return (

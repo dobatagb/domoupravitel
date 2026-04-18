@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "generate-pwa-icons": "node scripts/generate-pwa-icons.cjs"
+    "generate-pwa-icons": "node scripts/generate-pwa-icons.cjs",
+    "seed-users": "node scripts/seed-users.mjs",
+    "seed-owners": "node scripts/seed-owners-and-links.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.23.0",

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Users, Plus, Link2 } from 'lucide-react'
+import { Users, Plus, Link2, Trash2 } from 'lucide-react'
 import type { UserRole } from '../lib/supabase'
 import './Units.css'
 import './UserManagement.css'
@@ -47,6 +47,7 @@ export default function UserManagement() {
   const [assignUser, setAssignUser] = useState<AppUser | null>(null)
   const [assignSelected, setAssignSelected] = useState<Set<string>>(new Set())
   const [savingLinks, setSavingLinks] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const [uRes, unitRes, linkRes] = await Promise.all([
@@ -130,6 +131,34 @@ export default function UserManagement() {
       alert(msg)
     } finally {
       setSavingLinks(false)
+    }
+  }
+
+  const handleDeleteUser = async (u: AppUser) => {
+    if (userRole !== 'admin') {
+      alert('Само администратор може да изтрива потребители.')
+      return
+    }
+    if (u.id === authUser?.id) {
+      alert('Не можете да изтриете собствения си акаунт.')
+      return
+    }
+    if (!confirm(`Да се изтрие потребителят „${u.email}“? Действието е необратимо.`)) return
+
+    setDeletingId(u.id)
+    try {
+      const { error } = await supabase.rpc('admin_delete_user', { p_target_user_id: u.id })
+      if (error) throw error
+      await load()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Грешка при изтриване'
+      alert(
+        msg.includes('admin_delete_user') || msg.includes('function')
+          ? `${msg}\n\nИзпълни миграцията database_migrations/040_admin_delete_user_rpc.sql в Supabase.`
+          : msg
+      )
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -318,10 +347,24 @@ export default function UserManagement() {
                 </td>
                 <td className="user-mgmt-units-cell">{unitsSummary(u.id)}</td>
                 <td>
-                  <button type="button" className="btn-secondary btn-small" onClick={() => openAssign(u)}>
-                    <Link2 size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                    Обекти
-                  </button>
+                  <div className="user-mgmt-row-actions">
+                    <button type="button" className="btn-secondary btn-small" onClick={() => openAssign(u)}>
+                      <Link2 size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                      Обекти
+                    </button>
+                    {userRole === 'admin' && (
+                      <button
+                        type="button"
+                        className="btn-secondary btn-small user-mgmt-delete"
+                        disabled={deletingId === u.id || u.id === authUser?.id}
+                        title={u.id === authUser?.id ? 'Не можете да изтриете себе си' : 'Изтрий потребителя'}
+                        onClick={() => void handleDeleteUser(u)}
+                      >
+                        <Trash2 size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                        {deletingId === u.id ? '…' : 'Изтрий'}
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
