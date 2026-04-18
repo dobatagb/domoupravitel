@@ -7,25 +7,45 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['pwa-icon.svg'],
+      includeAssets: ['pwa-icon.svg', 'pwa-192.png', 'pwa-512.png', 'vite.svg'],
       manifest: {
+        id: '/',
         name: 'Домоуправител',
         short_name: 'Домоуправител',
         description: 'Система за управление на блок',
         theme_color: '#2563eb',
         background_color: '#ffffff',
         display: 'standalone',
+        orientation: 'portrait-primary',
         start_url: '/',
         scope: '/',
+        lang: 'bg',
         icons: [
           {
-            src: '/pwa-icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
-        ]
-      }
+            src: '/pwa-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
+      },
     })
   ],
   server: {

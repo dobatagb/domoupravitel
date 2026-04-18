@@ -123,6 +123,57 @@
   color: var(--text-light);
 }
 
+.obligations-lines-panel {
+  margin-bottom: 2rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--surface);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow);
+}
+
+.obligations-lines-heading {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--text);
+}
+
+.obligations-lines-hint {
+  font-size: 0.875rem;
+  color: var(--text-light);
+  margin: 0 0 1rem;
+  line-height: 1.45;
+}
+
+.obligations-obl-table-wrap {
+  margin-top: 0.5rem;
+}
+
+.obligations-obl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.obligations-obl-table th,
+.obligations-obl-table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.obligations-obl-table th {
+  font-weight: 600;
+  color: var(--text-light);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.obligations-obl-table th.num,
+.obligations-obl-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .payments-table {
   background: var(--surface);
   border-radius: 0.75rem;
