@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase, supabaseQuery } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, Filter } from 'lucide-react'
 import { useUnitGroups } from '../hooks/useUnitGroups'
@@ -78,28 +78,24 @@ export default function Units() {
           setUnits([])
           return
         }
-        const { data, error } = await supabaseQuery(() =>
-          supabase
-            .from('units')
-            .select(unitSelectFields)
-            .in('id', ids)
-            .order('type', { ascending: true })
-            .order('number', { ascending: true })
-        )
+        const { data, error } = await supabase
+          .from('units')
+          .select(unitSelectFields)
+          .in('id', ids)
+          .order('type', { ascending: true })
+          .order('number', { ascending: true })
         if (error) throw error
-        setUnits(data || [])
+        setUnits((data as Unit[]) || [])
         return
       }
 
-      const { data, error } = await supabaseQuery(() =>
-        supabase
-          .from('units')
-          .select(unitSelectFields)
-          .order('type', { ascending: true })
-          .order('number', { ascending: true })
-      )
+      const { data, error } = await supabase
+        .from('units')
+        .select(unitSelectFields)
+        .order('type', { ascending: true })
+        .order('number', { ascending: true })
       if (error) throw error
-      setUnits(data || [])
+      setUnits((data as Unit[]) || [])
     } catch (error) {
       console.error('Error loading units:', error)
     } finally {
@@ -123,27 +119,23 @@ export default function Units() {
           setUnits([])
           return
         }
-        const { data, error } = await supabaseQuery(() =>
-          supabase
-            .from('units')
-            .select(unitSelectFields)
-            .in('id', ids)
-            .order('type', { ascending: true })
-            .order('number', { ascending: true })
-        )
-        if (error) throw error
-        setUnits(data || [])
-        return
-      }
-      const { data, error } = await supabaseQuery(() =>
-        supabase
+        const { data, error } = await supabase
           .from('units')
           .select(unitSelectFields)
+          .in('id', ids)
           .order('type', { ascending: true })
           .order('number', { ascending: true })
-      )
+        if (error) throw error
+        setUnits((data as Unit[]) || [])
+        return
+      }
+      const { data, error } = await supabase
+        .from('units')
+        .select(unitSelectFields)
+        .order('type', { ascending: true })
+        .order('number', { ascending: true })
       if (error) throw error
-      setUnits(data || [])
+      setUnits((data as Unit[]) || [])
     } catch (error) {
       console.error('Error fetching units:', error)
     }

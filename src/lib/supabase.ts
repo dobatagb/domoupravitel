@@ -27,12 +27,20 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+/** Минимален тип за резултат от PostgREST builder (await / Promise.resolve). */
+export type SupabaseQueryResult = {
+  data: unknown
+  error: { message: string; code?: string; details?: string; hint?: string } | null
+}
+
 /**
  * Обвива PostgREST заявката в истински Promise.
  * Builder-ът е thenable, но директно в някои `Promise.race`/async сценарии може да не се разреши надеждно.
  * Без таймаут — бавна мрежа/Supabase няма да „гърми“ изкуствено след N секунди.
  */
-export async function supabaseQuery<T>(run: () => PromiseLike<T>): Promise<T> {
+export async function supabaseQuery<R extends SupabaseQueryResult>(
+  run: () => PromiseLike<R> | R
+): Promise<R> {
   return Promise.resolve(run())
 }
 

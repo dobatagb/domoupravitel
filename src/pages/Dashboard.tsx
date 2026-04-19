@@ -93,7 +93,11 @@ export default function Dashboard() {
         expQuery = expQuery.gte('date', `${scope}-01-01`).lte('date', `${scope}-12-31`)
       }
       const { data: expensesData } = await expQuery
-      const totalExpenses = expensesData?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0
+      const totalExpenses =
+        (expensesData as { amount?: number | null }[] | null | undefined)?.reduce(
+          (sum: number, item: { amount?: number | null }) => sum + (Number(item.amount) || 0),
+          0,
+        ) ?? 0
 
       let docsCount = 0
       if (scope === 'all') {
@@ -157,8 +161,14 @@ export default function Dashboard() {
       }
 
       const labelById: Record<string, string> = {}
-      const rows: ViewerBuildingRow[] = (units || []).map((u) => {
-        const ug = u.group as { name?: string } | null
+      type UnitRow = {
+        id: string
+        owner_name: string
+        number: string | number
+        group: { name?: string } | null
+      }
+      const rows: ViewerBuildingRow[] = ((units as UnitRow[] | null | undefined) ?? []).map((u) => {
+        const ug = u.group
         const label = [ug?.name, u.number].filter(Boolean).join(' ')
         labelById[u.id] = label
         return {
@@ -177,10 +187,16 @@ export default function Dashboard() {
       }
       setViewerMyDue(myDue)
 
-      const myPayList: ViewerPaymentRow[] = (pays || [])
-        .filter((p) => linkedIds.has((p as { unit_id: string }).unit_id))
+      type PayRow = {
+        id: string
+        unit_id: string
+        amount: number | string
+        payment_date: string | null
+      }
+      const myPayList: ViewerPaymentRow[] = ((pays || []) as PayRow[])
+        .filter((p) => linkedIds.has(p.unit_id))
         .map((p) => {
-          const row = p as { id: string; unit_id: string; amount: number | string; payment_date: string | null }
+          const row = p
           const amt = typeof row.amount === 'string' ? parseFloat(row.amount) : Number(row.amount)
           return {
             id: row.id,

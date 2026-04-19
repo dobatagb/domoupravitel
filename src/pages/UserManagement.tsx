@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase, supabaseQuery } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Users, Plus, Link2, Trash2 } from 'lucide-react'
 import type { UserRole } from '../lib/supabase'
@@ -51,11 +51,9 @@ export default function UserManagement() {
 
   const load = useCallback(async () => {
     const [uRes, unitRes, linkRes] = await Promise.all([
-      supabaseQuery(() => supabase.from('users').select('id, email, role').order('email')),
-      supabaseQuery(() =>
-        supabase.from('units').select('id, number, group:group_id(name)').order('type').order('number')
-      ),
-      supabaseQuery(() => supabase.from('user_unit_links').select('id, user_id, unit_id')),
+      supabase.from('users').select('id, email, role').order('email'),
+      supabase.from('units').select('id, number, group:group_id(name)').order('type').order('number'),
+      supabase.from('user_unit_links').select('id, user_id, unit_id'),
     ])
     if (uRes.error) throw uRes.error
     if (unitRes.error) throw unitRes.error
