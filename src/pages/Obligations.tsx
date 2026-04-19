@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import { useAuth } from '../contexts/AuthContext'
-import { Filter, Edit2, Plus, Trash2, ChevronRight } from 'lucide-react'
+import { Filter, Edit2, Plus, Trash2, ChevronRight, History } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import { useUnitGroups } from '../hooks/useUnitGroups'
@@ -127,6 +127,8 @@ export default function Obligations() {
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showCarriedDebtModal, setShowCarriedDebtModal] = useState(false)
+  const [carriedDebtForm, setCarriedDebtForm] = useState({ unit_id: '', amount: '' })
 
   const [formData, setFormData] = useState({
     amount: '',
@@ -163,6 +165,27 @@ export default function Obligations() {
       setDueByUnit({})
     }
   }
+
+  const fetchOblAggByUnit = useCallback(async () => {
+    const { data, error } = await supabaseQuery(() =>
+      supabase.from('unit_obligations').select('unit_id, amount_original, amount_remaining')
+    )
+    if (error) {
+      console.warn('unit_obligations aggregate:', error)
+      setOblAggByUnit({})
+      return
+    }
+    const m: Record<string, { orig: number; rem: number }> = {}
+    for (const raw of data || []) {
+      const r = raw as { unit_id: string; amount_original: number | string; amount_remaining: number | string }
+      const o = typeof r.amount_original === 'string' ? parseFloat(r.amount_original) : Number(r.amount_original)
+      const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
+      if (!m[r.unit_id]) m[r.unit_id] = { orig: 0, rem: 0 }
+      m[r.unit_id].orig += Number.isFinite(o) ? o : 0
+      m[r.unit_id].rem += Number.isFinite(rem) ? rem : 0
+    }
+    setOblAggByUnit(m)
+  }, [])
 
   const fetchObligationLines = useCallback(async () => {
     if (!canEdit()) return
@@ -229,27 +252,8 @@ export default function Obligations() {
   }, [])
 
   useEffect(() => {
-    void (async () => {
-      const { data, error } = await supabaseQuery(() =>
-        supabase.from('unit_obligations').select('unit_id, amount_original, amount_remaining')
-      )
-      if (error) {
-        console.warn('unit_obligations aggregate:', error)
-        setOblAggByUnit({})
-        return
-      }
-      const m: Record<string, { orig: number; rem: number }> = {}
-      for (const raw of data || []) {
-        const r = raw as { unit_id: string; amount_original: number | string; amount_remaining: number | string }
-        const o = typeof r.amount_original === 'string' ? parseFloat(r.amount_original) : Number(r.amount_original)
-        const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
-        if (!m[r.unit_id]) m[r.unit_id] = { orig: 0, rem: 0 }
-        m[r.unit_id].orig += Number.isFinite(o) ? o : 0
-        m[r.unit_id].rem += Number.isFinite(rem) ? rem : 0
-      }
-      setOblAggByUnit(m)
-    })()
-  }, [])
+    void fetchOblAggByUnit()
+  }, [fetchOblAggByUnit])
 
   useEffect(() => {
     const uid = searchParams.get('unit')
@@ -320,6 +324,48 @@ export default function Obligations() {
     setShowAddModal(true)
   }
 
+  const openCarriedDebtModal = () => {
+    const uid = filterUnit !== 'all' ? filterUnit : ''
+    const u = uid ? units.find((x) => x.id === uid) : undefined
+    const ob = u?.opening_balance
+    setCarriedDebtForm({
+      unit_id: uid,
+      amount:
+        ob != null && ob !== ''
+          ? String(typeof ob === 'string' ? ob.replace(',', '.') : ob)
+          : '',
+    })
+    setShowCarriedDebtModal(true)
+  }
+
+  const handleSaveCarriedDebt = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canEdit()) return
+    const amt = parseMoney(carriedDebtForm.amount)
+    if (Number.isNaN(amt) || amt < 0) {
+      alert('Въведи сума ≥ 0.')
+      return
+    }
+    if (!carriedDebtForm.unit_id) {
+      alert('Избери обект.')
+      return
+    }
+    try {
+      const { error } = await supabase
+        .from('units')
+        .update({ opening_balance: amt })
+        .eq('id', carriedDebtForm.unit_id)
+      if (error) throw error
+      setShowCarriedDebtModal(false)
+      await fetchUnits()
+      await fetchDueByUnitFromDb()
+      await fetchOblAggByUnit()
+      await fetchObligationLines()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Грешка при запис')
+    }
+  }
+
   useEffect(() => {
     if (!addForm.unit_id) {
       setMaxPayForUnit(null)
@@ -373,6 +419,7 @@ export default function Obligations() {
       setShowAddModal(false)
       await fetchPayments()
       await fetchDueByUnitFromDb()
+      await fetchOblAggByUnit()
       await fetchObligationLines()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при запис'
@@ -438,6 +485,7 @@ export default function Obligations() {
       }
       await fetchPayments()
       await fetchDueByUnitFromDb()
+      await fetchOblAggByUnit()
       await fetchObligationLines()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при изтриване'
@@ -509,10 +557,19 @@ export default function Obligations() {
         })
         .eq('id', editingObligation.id)
       if (error) throw error
+      if (editingObligation.billing_period_id === null && title === 'Пренесен дълг') {
+        const { error: uErr } = await supabase
+          .from('units')
+          .update({ opening_balance: ao })
+          .eq('id', editingObligation.unit_id)
+        if (uErr) console.warn('sync units.opening_balance:', uErr)
+      }
       setShowObligationModal(false)
       setEditingObligation(null)
+      await fetchUnits()
       await fetchObligationLines()
       await fetchDueByUnitFromDb()
+      await fetchOblAggByUnit()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Грешка при запис')
     }
@@ -536,8 +593,14 @@ export default function Obligations() {
     try {
       const { error } = await supabase.from('unit_obligations').delete().eq('id', row.id)
       if (error) throw error
+      if (row.billing_period_id === null && row.title === 'Пренесен дълг') {
+        const { error: uErr } = await supabase.from('units').update({ opening_balance: 0 }).eq('id', row.unit_id)
+        if (uErr) console.warn('clear units.opening_balance:', uErr)
+      }
+      await fetchUnits()
       await fetchObligationLines()
       await fetchDueByUnitFromDb()
+      await fetchOblAggByUnit()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Грешка при изтриване')
     }
@@ -614,6 +677,7 @@ export default function Obligations() {
               setLoading(true)
               void fetchPayments()
               void fetchDueByUnitFromDb()
+              void fetchOblAggByUnit()
               void fetchObligationLines()
             }}
           >
@@ -625,17 +689,23 @@ export default function Obligations() {
         <div>
           <h1>Задължения</h1>
           <p>
-            Неплатените суми идват от редове в „Задължения“ в базата (периоди по група + пренесен дълг). При плащане сумата се
-            приспада автоматично: първо извънредните (най-старите), после редовните (най-старите). Не се допуска плащане над
-            остатъка.
+            Неплатените суми идват от редове в „Задължения“ в базата (периоди по група + пренесен дълг). Пренесеният дълг се
+            задава с бутона по-долу — влиза като ред „Пренесен дълг“ и се включва в неплатеното. При плащане сумата се приспада
+            автоматично: първо извънредните (най-старите), после редовните (най-старите). Не се допуска плащане над остатъка.
           </p>
         </div>
-        <div className="page-header-actions">
+        <div className="page-header-actions obligations-header-actions">
           {canEdit() && (
-            <button type="button" className="btn-primary" onClick={openAddModal}>
-              <Plus size={20} />
-              Ново плащане
-            </button>
+            <>
+              <button type="button" className="btn-secondary" onClick={openCarriedDebtModal}>
+                <History size={20} />
+                Пренесен дълг по обект
+              </button>
+              <button type="button" className="btn-primary" onClick={openAddModal}>
+                <Plus size={20} />
+                Ново плащане
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -745,7 +815,8 @@ export default function Obligations() {
         <div className="obligations-lines-panel">
           <h2 className="obligations-lines-heading">Редове задължения по обекти</h2>
           <p className="obligations-lines-hint">
-            Редакция на заглавие и суми; изтриване само ако няма приспадания от плащания. Редовните тарифи от период при
+            Редът „Пренесен дълг“ (без период) следва сумата от „Пренесен дълг по обект“; редакция тук обновява и полето в
+            обекта. Редакция на други редове; изтриване само ако няма приспадания от плащания. Редовните тарифи от период при
             следващо „Запази суми“ в <strong>Периоди</strong> могат да се презапишат от синхронизацията.
           </p>
           {loadingObligations ? (
@@ -890,6 +961,57 @@ export default function Obligations() {
           </table>
         )}
       </div>
+
+      {showCarriedDebtModal && (
+        <div className="modal-overlay" onClick={() => setShowCarriedDebtModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Пренесен дълг (старо задължение)</h2>
+            <p className="form-hint" style={{ marginTop: 0 }}>
+              Задава се сумата, която обектът дължи извън текущото таксуване по периоди. В базата се създава или обновява ред
+              „Пренесен дълг“ и влиза в неплатеното и в плащанията. Вече приспаднатото от плащания се запазва при промяна на
+              общата сума.
+            </p>
+            <form onSubmit={handleSaveCarriedDebt}>
+              <div className="form-group">
+                <label htmlFor="carried-unit">Обект *</label>
+                <select
+                  id="carried-unit"
+                  value={carriedDebtForm.unit_id}
+                  onChange={(e) => setCarriedDebtForm((f) => ({ ...f, unit_id: e.target.value }))}
+                  required
+                >
+                  <option value="">— Избери обект —</option>
+                  {units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="carried-amt">Пренесен дълг (€) *</label>
+                <input
+                  id="carried-amt"
+                  type="text"
+                  inputMode="decimal"
+                  value={carriedDebtForm.amount}
+                  onChange={(e) => setCarriedDebtForm((f) => ({ ...f, amount: e.target.value }))}
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowCarriedDebtModal(false)}>
+                  Отказ
+                </button>
+                <button type="submit" className="btn-primary">
+                  Запази
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>

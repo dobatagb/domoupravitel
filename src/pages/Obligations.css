@@ -39,7 +39,8 @@
   align-items: center;
 }
 
-.obligations-page .page-header-actions .btn-primary {
+.obligations-page .page-header-actions .btn-primary,
+.obligations-page .page-header-actions .btn-secondary {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;

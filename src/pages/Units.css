@@ -2,6 +2,18 @@
   animation: fadeIn 0.3s;
 }
 
+.units-page-subhint {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: var(--text-light);
+  max-width: 42rem;
+}
+
+.units-page-subhint a {
+  color: var(--primary);
+  font-weight: 500;
+}
+
 .filter-section {
   display: flex;
   justify-content: space-between;

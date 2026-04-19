@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, Filter } from 'lucide-react'
@@ -51,7 +52,6 @@ export default function Units() {
     tenant_phone: '',
     notes: '',
     floor: '',
-    opening_balance: '0',
   })
 
   useEffect(() => {
@@ -188,13 +188,6 @@ export default function Units() {
         return
       }
 
-      const obRaw = formData.opening_balance.trim().replace(',', '.')
-      const openingBalance = obRaw === '' ? 0 : parseFloat(obRaw)
-      if (Number.isNaN(openingBalance) || openingBalance < 0) {
-        alert('Пренесеният дълг трябва да е число ≥ 0.')
-        return
-      }
-
       const unitData: Record<string, unknown> = {
         group_id: formData.group_id,
         type: selectedGroup.code,
@@ -208,7 +201,6 @@ export default function Units() {
         tenant_phone: formData.tenant_phone || null,
         notes: formData.notes || null,
         floor: formData.floor.trim() || null,
-        opening_balance: openingBalance,
       }
 
       if (editingUnit) {
@@ -255,10 +247,6 @@ export default function Units() {
       tenant_phone: unit.tenant_phone || '',
       notes: unit.notes || '',
       floor: unit.floor ?? '',
-      opening_balance:
-        unit.opening_balance != null && unit.opening_balance !== ''
-          ? String(unit.opening_balance)
-          : '0',
     })
     setShowModal(true)
   }
@@ -292,7 +280,6 @@ export default function Units() {
       tenant_phone: '',
       notes: '',
       floor: '',
-      opening_balance: '0',
     })
   }
 
@@ -322,6 +309,12 @@ export default function Units() {
               ? 'Контакти на собственик и наемател по вашите обекти. Можете да коригирате квадратурата; група, номер и задължения се управляват от домоуправителя.'
               : 'Управление на апартаменти, гаражи, магазини и паркоместа'}
           </p>
+          {canEdit() && (
+            <p className="units-page-subhint">
+              Пренесен дълг (старо задължение) се въвежда от{' '}
+              <Link to="/obligations">Задължения</Link> — бутон „Пренесен дълг по обект“.
+            </p>
+          )}
         </div>
         {canEdit() && (
           <button className="btn-primary" onClick={openNewModal}>
@@ -610,28 +603,6 @@ export default function Units() {
                   rows={3}
                 />
               </div>
-
-              {!isViewer && (
-                <div className="form-section">
-                  <h3>Задължения</h3>
-                  <div className="form-group">
-                    <label>Пренесен дълг (€)</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.opening_balance}
-                      onChange={(e) =>
-                        setFormData({ ...formData, opening_balance: e.target.value })
-                      }
-                      placeholder="0"
-                    />
-                    <small className="form-hint">
-                      Сума, която обектът дължи извън текущото таксуване по периоди (напр. стари задължения). Намаляваш
-                      ръчно, когато погасиш част от нея.
-                    </small>
-                  </div>
-                </div>
-              )}
 
               <div className="modal-actions">
                 <button
