@@ -20,7 +20,7 @@ interface MovementRow {
 }
 
 export default function Movements() {
-  const { canEdit } = useAuth()
+  const { user } = useAuth()
   const [rows, setRows] = useState<MovementRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -147,18 +147,9 @@ export default function Movements() {
   }, [])
 
   useEffect(() => {
-    if (!canEdit()) return
+    if (!user) return
     void load()
-  }, [canEdit, load])
-
-  if (!canEdit()) {
-    return (
-      <div className="movements-page">
-        <h1>Движения</h1>
-        <p className="movements-muted">Тази справка е достъпна за домоуправителя (редактор / администратор).</p>
-      </div>
-    )
-  }
+  }, [user, load])
 
   if (loading) {
     return <div>Зареждане...</div>

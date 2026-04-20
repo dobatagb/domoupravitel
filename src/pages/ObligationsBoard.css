@@ -2,9 +2,25 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.obligations-board-compact-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.obligations-board-compact-toggle input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--primary, #2563eb);
 }
 
 .obligations-board-export {
@@ -65,6 +81,23 @@
   min-width: 10rem;
 }
 
+/* Фиксирана дясна колона „Общо дължимо“ при хоризонтален скрол */
+.obligations-board-table thead th.col-total,
+.obligations-board-table tbody td.col-total {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  box-shadow: -4px 0 8px -4px rgba(0, 0, 0, 0.08);
+}
+
+.obligations-board-table thead th.col-total {
+  z-index: 3;
+}
+
+.obligations-board-table thead th:first-child {
+  z-index: 4;
+}
+
 .obligations-board-table thead th {
   background: var(--surface);
   font-weight: 600;
@@ -83,6 +116,10 @@
 
 .obligations-board-table tbody tr:hover td:first-child {
   background: rgba(37, 99, 235, 0.06);
+}
+
+.obligations-board-table tbody tr:hover td.col-total {
+  background: rgba(100, 116, 139, 0.12);
 }
 
 .obligations-board-table td.cell-empty {

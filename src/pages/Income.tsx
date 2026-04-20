@@ -7,6 +7,7 @@ import bg from 'date-fns/locale/bg'
 import type { FinanceYearScope } from '../components/YearScopeSelect'
 import './Income.css'
 import './Expenses.css'
+import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 
 export interface IncomeRow {
   id: string
@@ -22,6 +23,7 @@ export interface IncomeRow {
 
 type UnitOpt = {
   id: string
+  type?: string
   number: string | null
   owner_name: string | null
   group: { name: string | null } | null
@@ -35,7 +37,7 @@ const typeLabels: Record<string, string> = {
 
 function unitLabel(u: UnitOpt): string {
   const g = u.group?.name
-  const n = u.number
+  const n = u.number != null ? formatUnitNumberDisplay(u.number) : ''
   return [g, n].filter(Boolean).join(' ') || u.owner_name || '—'
 }
 
@@ -66,10 +68,10 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
   const fetchUnits = useCallback(async () => {
     const { data } = await supabase
       .from('units')
-      .select('id, number, owner_name, group:group_id (name)')
+      .select('id, type, number, owner_name, group:group_id (name)')
       .order('type', { ascending: true })
       .order('number', { ascending: true })
-    const list = ((data ?? []) as unknown) as UnitOpt[]
+    const list = sortUnitsByTypeAndNumber(((data ?? []) as unknown) as UnitOpt[])
     setUnits(list)
     setUnitMap(Object.fromEntries(list.map((u) => [u.id, unitLabel(u)])))
   }, [])

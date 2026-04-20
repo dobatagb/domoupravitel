@@ -305,6 +305,51 @@
   }
 }
 
+/* Мои обекти (viewer): ред заглавие + сума — ясно разстояние и хиляден разделител */
+.viewer-due-section {
+  margin-top: 0.25rem;
+}
+
+.viewer-due-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.viewer-due-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.viewer-due-list li:last-child {
+  border-bottom: none;
+}
+
+.viewer-due-title {
+  flex: 1 1 8rem;
+  min-width: 0;
+  word-break: break-word;
+  padding-right: 0.5rem;
+}
+
+.viewer-due-amt {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.unit-card-viewer-group {
+  font-weight: 500;
+  color: var(--text-light);
+}
+
 @media (max-width: 768px) {
   .units-grid {
     grid-template-columns: 1fr;

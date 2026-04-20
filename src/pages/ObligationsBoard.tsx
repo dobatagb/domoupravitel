@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useUnitGroups } from '../hooks/useUnitGroups'
+import { sortUnitsByTypeAndNumber, formatUnitNumberDisplay } from '../lib/unitNumber'
 import { Download, LayoutGrid } from 'lucide-react'
 import './ObligationsBoard.css'
 
@@ -8,7 +9,6 @@ interface UnitRow {
   id: string
   number: string
   type: string
-  owner_name: string
   floor: string | null
   group?: { name: string } | null
 }
@@ -17,14 +17,16 @@ interface ObligationRow {
   unit_id: string
   amount_remaining: string | number
   kind: string
+  title: string
 }
 
-/** Фиксирани колони по вид задължение — без отделна колона за всеки период (иначе след години таблицата става неупотребима). */
-const KIND_ORDER = ['regular', 'extraordinary'] as const
+const EXTRA_COL = '__extraordinary__'
+/** Всички редовни редове в една колона (сбит режим). */
+const REGULAR_SUM_COL = '__regular_all__'
 
-const KIND_LABEL: Record<string, string> = {
-  regular: 'Редовни',
-  extraordinary: 'Извънредни',
+function obligationColKey(ob: ObligationRow): string {
+  if (ob.kind === 'extraordinary') return EXTRA_COL
+  return `t:${ob.title}`
 }
 
 function parseAmt(v: string | number): number {
@@ -40,10 +42,6 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/**
- * Един HTML табличен файл с разширение .xls — Excel го отваря с UTF-8 кирилица и широки колони.
- * CSV кодировките се държат различно по програми; този формат е стабилен за Excel.
- */
 function buildExportXlsHtml(
   units: UnitRow[],
   unitTotals: Record<string, number>,
@@ -59,12 +57,30 @@ function buildExportXlsHtml(
   ]
   for (const u of units) {
     const gname = u.group?.name ?? labelForCode(u.type)
-    const label = `${gname} ${u.number}`.trim()
+    const label = `${gname} ${formatUnitNumberDisplay(u.number)}`.trim()
     const totalDue = unitTotals[u.id] ?? 0
     parts.push(`<tr><td>${escapeHtml(label)}</td><td class="c">${totalDue.toFixed(2)}</td></tr>`)
   }
   parts.push('</table></body></html>')
   return parts.join('')
+}
+
+function columnHeading(key: string): string {
+  if (key === EXTRA_COL) return 'Извънредни'
+  if (key === REGULAR_SUM_COL) return 'Редовни (всички)'
+  return key.startsWith('t:') ? key.slice(2) : key
+}
+
+function columnHasAnyOwed(
+  matrix: Record<string, Record<string, number>>,
+  unitIds: string[],
+  key: string,
+): boolean {
+  const eps = 0.005
+  for (const id of unitIds) {
+    if ((matrix[id]?.[key] ?? 0) > eps) return true
+  }
+  return false
 }
 
 export default function ObligationsBoard() {
@@ -73,6 +89,8 @@ export default function ObligationsBoard() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [units, setUnits] = useState<UnitRow[]>([])
   const [obligations, setObligations] = useState<ObligationRow[]>([])
+  /** false = колона за всяко заглавие на редовно задължение; true = една колона за всички редовни. */
+  const [compactRegulars, setCompactRegulars] = useState(true)
 
   useEffect(() => {
     void load()
@@ -86,25 +104,24 @@ export default function ObligationsBoard() {
         supabaseQuery(() =>
           supabase
             .from('units')
-            .select('id, number, type, owner_name, floor, group:group_id (name)')
+            .select('id, number, type, floor, group:group_id (name)')
             .order('type', { ascending: true })
             .order('number', { ascending: true })
         ),
         supabaseQuery(() =>
-          supabase.from('unit_obligations').select('unit_id, amount_remaining, kind').gt('amount_remaining', 0)
+          supabase.from('unit_obligations').select('unit_id, amount_remaining, kind, title').gt('amount_remaining', 0)
         ),
       ])
       if (eu) throw eu
       if (eo) throw eo
       const unitRows = (u ?? []) as unknown[]
-      setUnits(
-        unitRows.map((row) => {
-          const r = row as UnitRow & { group?: { name: string } | { name: string }[] | null }
-          const g = r.group
-          const group = Array.isArray(g) ? g[0] ?? null : g ?? null
-          return { ...r, group }
-        })
-      )
+      const mapped = unitRows.map((row) => {
+        const r = row as UnitRow & { group?: { name: string } | { name: string }[] | null }
+        const g = r.group
+        const group = Array.isArray(g) ? g[0] ?? null : g ?? null
+        return { ...r, group }
+      })
+      setUnits(sortUnitsByTypeAndNumber(mapped))
       setObligations((o as ObligationRow[]) || [])
     } catch (e: unknown) {
       console.error(e)
@@ -122,16 +139,29 @@ export default function ObligationsBoard() {
   }
 
   const { columns, matrix, unitTotals } = useMemo(() => {
-    const kindsWithBalance = new Set<string>()
+    let hasExtra = false
+    let hasRegular = false
+    const regularTitles = new Set<string>()
     for (const ob of obligations) {
-      if (parseAmt(ob.amount_remaining) > 0) kindsWithBalance.add(ob.kind)
+      const v = parseAmt(ob.amount_remaining)
+      if (v <= 0) continue
+      if (ob.kind === 'extraordinary') hasExtra = true
+      else {
+        hasRegular = true
+        regularTitles.add(ob.title)
+      }
     }
-    const keys: string[] = []
-    for (const k of KIND_ORDER) {
-      if (kindsWithBalance.has(k)) keys.push(k)
-    }
-    for (const k of kindsWithBalance) {
-      if (!keys.includes(k)) keys.push(k)
+
+    let colKeys: string[] = []
+    if (compactRegulars) {
+      if (hasExtra) colKeys.push(EXTRA_COL)
+      if (hasRegular) colKeys.push(REGULAR_SUM_COL)
+    } else {
+      if (hasExtra) colKeys.push(EXTRA_COL)
+      const titlesSorted = [...regularTitles].sort((a, b) => a.localeCompare(b, 'bg', { sensitivity: 'base' }))
+      for (const t of titlesSorted) {
+        colKeys.push(`t:${t}`)
+      }
     }
 
     const matrix: Record<string, Record<string, number>> = {}
@@ -145,20 +175,28 @@ export default function ObligationsBoard() {
     for (const ob of obligations) {
       const v = parseAmt(ob.amount_remaining)
       if (v <= 0) continue
-      const col = ob.kind
+      let key: string
+      if (compactRegulars) {
+        key = ob.kind === 'extraordinary' ? EXTRA_COL : REGULAR_SUM_COL
+      } else {
+        key = obligationColKey(ob)
+      }
       if (!matrix[ob.unit_id]) matrix[ob.unit_id] = {}
-      matrix[ob.unit_id][col] = (matrix[ob.unit_id][col] ?? 0) + v
+      matrix[ob.unit_id][key] = (matrix[ob.unit_id][key] ?? 0) + v
       unitTotals[ob.unit_id] = (unitTotals[ob.unit_id] ?? 0) + v
     }
 
-    const columns = keys.map((key) => ({
+    const unitIds = units.map((u) => u.id)
+    colKeys = colKeys.filter((key) => columnHasAnyOwed(matrix, unitIds, key))
+
+    const columns = colKeys.map((key) => ({
       key,
-      kind: key,
-      title: KIND_LABEL[key] ?? key,
+      kind: key === EXTRA_COL ? ('extraordinary' as const) : ('regular' as const),
+      title: columnHeading(key),
     }))
 
     return { columns, matrix, unitTotals }
-  }, [units, obligations])
+  }, [units, obligations, compactRegulars])
 
   const handleExport = () => {
     if (units.length === 0) return
@@ -184,11 +222,11 @@ export default function ObligationsBoard() {
         </h1>
       </div>
       <p className="obligations-board-sub">
-        Сумите по обект са <strong>агрегирани по вид</strong> (редовни / извънредни), без отделна колона за всеки
-        период — така таблицата остава четима и след много години. Показват се само редове с остатък &gt; 0 поне при
-        един обект. Последната колона е общо дължимо по обект. При плащане приспадането в системата е: първо
-        извънредни, после редовни (най-старите първи). <strong>Export</strong> тегли таблица за Excel (.xls) с колони{' '}
-        <strong>Обект</strong> и <strong>Дължи Общо</strong> (сумарно дължимо по обекта, като в колоната „Общо дължимо“).
+        <strong>Сбит изглед</strong> — колони „Извънредни“ и „Редовни (всички)“. <strong>Без отметка</strong> — отделна колона
+        за всяко заглавие (както в „Периоди“). Колона се показва само ако <strong>поне един обект</strong> има остатък по нея;
+        ако по тази колона всички са платили, тя не се показва. Данните са с ненулев остатък. При плащане приспадането е: първо
+        извънредни, после редовни. <strong>Обект</strong> и <strong>Общо дължимо</strong> остават закачени при скрол.{' '}
+        <strong>Export</strong> — <strong>Обект</strong> и <strong>Дължи Общо</strong>.
       </p>
 
       {loadError && (
@@ -202,6 +240,16 @@ export default function ObligationsBoard() {
 
       {units.length > 0 && (
         <div className="obligations-board-toolbar">
+          {obligations.length > 0 ? (
+            <label className="obligations-board-compact-toggle">
+              <input
+                type="checkbox"
+                checked={compactRegulars}
+                onChange={(e) => setCompactRegulars(e.target.checked)}
+              />
+              Сбит изглед (редовните в една колона)
+            </label>
+          ) : null}
           <button type="button" className="btn-secondary obligations-board-export" onClick={handleExport}>
             <Download size={18} aria-hidden />
             Export
@@ -224,7 +272,7 @@ export default function ObligationsBoard() {
                     key={c.key}
                     scope="col"
                     className={c.kind === 'extraordinary' ? 'col-extra' : ''}
-                    title={c.kind === 'extraordinary' ? 'Извънредно задължение' : 'Редовно задължение'}
+                    title={c.kind === 'extraordinary' ? 'Извънредни задължения' : c.title}
                   >
                     {c.title}
                   </th>
@@ -237,7 +285,7 @@ export default function ObligationsBoard() {
             <tbody>
               {units.map((u) => {
                 const gname = u.group?.name ?? labelForCode(u.type)
-                const label = `${gname} ${u.number}`.trim()
+                const label = `${gname} ${formatUnitNumberDisplay(u.number)}`.trim()
                 const floorLine = u.floor?.trim()
                 const total = unitTotals[u.id] ?? 0
                 return (
@@ -245,7 +293,6 @@ export default function ObligationsBoard() {
                     <td>
                       <div className="obligations-board-unit-title">{label}</div>
                       {floorLine && <div className="obligations-board-owner">Етаж: {floorLine}</div>}
-                      <div className="obligations-board-owner">{u.owner_name}</div>
                     </td>
                     {columns.map((c) => {
                       const v = matrix[u.id]?.[c.key] ?? 0

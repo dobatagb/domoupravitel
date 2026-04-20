@@ -2,17 +2,19 @@ import { useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Link } from 'react-router-dom'
-import { Building2, TrendingUp, TrendingDown, FileText, CreditCard, LayoutGrid } from 'lucide-react'
+import { TrendingUp, TrendingDown, CreditCard, LayoutGrid, Wallet, Landmark } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
+import { compareUnitNumberStrings, formatUnitNumberDisplay } from '../lib/unitNumber'
+import { useUnitGroups } from '../hooks/useUnitGroups'
 
 type ViewerBuildingRow = {
   unitId: string
   label: string
-  owner: string
+  floor: string
   due: number
   paid: number
 }
@@ -26,16 +28,23 @@ type ViewerPaymentRow = {
 
 export default function Dashboard() {
   const { userRole, user } = useAuth()
+  const { labelForCode } = useUnitGroups()
   const isViewer = userRole === 'viewer'
   const [stats, setStats] = useState({
-    totalUnits: 0,
     /** Сума от плащания (payments), статус „платено“ — постъпили в касата от Задължения */
     totalPayments: 0,
     /** Редове от таблица income (Финанси → Други приходи), вкл. начална сума като приход при нужда */
     totalOtherIncome: 0,
     totalExpenses: 0,
-    totalDocuments: 0,
   })
+
+  /** Текущо състояние по редове unit_obligations (без филтър по година). */
+  const [obligationTotals, setObligationTotals] = useState({
+    charged: 0,
+    collected: 0,
+    remaining: 0,
+  })
+  const [liquidBalances, setLiquidBalances] = useState({ cash: 0, bank: 0 })
 
   const [viewerBuildingRows, setViewerBuildingRows] = useState<ViewerBuildingRow[]>([])
   const [viewerMyDue, setViewerMyDue] = useState(0)
@@ -46,7 +55,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     void fetchStats(statsYear)
-  }, [statsYear])
+  }, [statsYear, isViewer])
 
   useEffect(() => {
     if (!isViewer || !user?.id) {
@@ -73,10 +82,10 @@ export default function Dashboard() {
 
   const fetchStats = async (scope: FinanceYearScope) => {
     try {
-      const { count: unitsCount } = await supabase
-        .from('units')
-        .select('*', { count: 'exact', head: true })
-
+      if (isViewer) {
+        setObligationTotals({ charged: 0, collected: 0, remaining: 0 })
+        setLiquidBalances({ cash: 0, bank: 0 })
+      }
       const { data: paymentsData } = await supabase
         .from('payments')
         .select('amount, payment_date, created_at')
@@ -99,19 +108,6 @@ export default function Dashboard() {
           0,
         ) ?? 0
 
-      let docsCount = 0
-      if (scope === 'all') {
-        const { count } = await supabase.from('documents').select('*', { count: 'exact', head: true })
-        docsCount = count || 0
-      } else {
-        const { count } = await supabase
-          .from('documents')
-          .select('*', { count: 'exact', head: true })
-          .gte('created_at', `${scope}-01-01T00:00:00.000Z`)
-          .lte('created_at', `${scope}-12-31T23:59:59.999Z`)
-        docsCount = count || 0
-      }
-
       let incQuery = supabase.from('income').select('amount')
       if (scope !== 'all') {
         incQuery = incQuery.gte('date', `${scope}-01-01`).lte('date', `${scope}-12-31`)
@@ -124,12 +120,51 @@ export default function Dashboard() {
       }
 
       setStats({
-        totalUnits: unitsCount || 0,
         totalPayments,
         totalOtherIncome,
         totalExpenses,
-        totalDocuments: docsCount || 0,
       })
+
+      if (!isViewer) {
+        const [{ data: oblRows, error: oblErr }, { data: settings, error: setErr }] = await Promise.all([
+          supabase.from('unit_obligations').select('amount_original, amount_remaining'),
+          supabase.from('app_settings').select('cash_opening_balance, bank_account_balance').eq('id', 1).maybeSingle(),
+        ])
+        if (!oblErr && oblRows) {
+          let charged = 0
+          let remaining = 0
+          for (const raw of oblRows) {
+            const r = raw as { amount_original: number | string; amount_remaining: number | string }
+            const o = Number(r.amount_original)
+            const rem = Number(r.amount_remaining)
+            charged += Number.isFinite(o) ? o : 0
+            remaining += Number.isFinite(rem) ? rem : 0
+          }
+          const collected = Math.round(Math.max(0, charged - remaining) * 100) / 100
+          setObligationTotals({
+            charged,
+            collected,
+            remaining,
+          })
+        } else {
+          setObligationTotals({ charged: 0, collected: 0, remaining: 0 })
+        }
+
+        if (!setErr && settings) {
+          const s = settings as {
+            cash_opening_balance?: number | string
+            bank_account_balance?: number | string
+          }
+          const cash = Number(s.cash_opening_balance ?? 0)
+          const bank = Number(s.bank_account_balance ?? 0)
+          setLiquidBalances({
+            cash: Number.isFinite(cash) ? cash : 0,
+            bank: Number.isFinite(bank) ? bank : 0,
+          })
+        } else {
+          setLiquidBalances({ cash: 0, bank: 0 })
+        }
+      }
     } catch (error) {
       console.error('Error fetching stats:', error)
     }
@@ -145,7 +180,7 @@ export default function Dashboard() {
       const [{ data: units }, dueByUnit, { data: pays }] = await Promise.all([
         supabase
           .from('units')
-          .select('id, owner_name, number, group:group_id (name)')
+          .select('id, number, floor, type, group:group_id (name)')
           .order('type', { ascending: true })
           .order('number', { ascending: true }),
         loadDueByUnitMap(),
@@ -163,18 +198,22 @@ export default function Dashboard() {
       const labelById: Record<string, string> = {}
       type UnitRow = {
         id: string
-        owner_name: string
         number: string | number
+        floor?: string | null
+        type: string
         group: { name?: string } | null
       }
-      const rows: ViewerBuildingRow[] = ((units as UnitRow[] | null | undefined) ?? []).map((u) => {
-        const ug = u.group
-        const label = [ug?.name, u.number].filter(Boolean).join(' ')
+      const unitList = ((units as UnitRow[] | null | undefined) ?? []).slice()
+      unitList.sort((a, b) => compareUnitNumberStrings(String(a.number), String(b.number)))
+      const rows: ViewerBuildingRow[] = unitList.map((u) => {
+        const ug = u.group?.name ?? labelForCode(u.type)
+        const n = formatUnitNumberDisplay(u.number)
+        const label = [ug, n].filter(Boolean).join(' ')
         labelById[u.id] = label
         return {
           unitId: u.id,
           label,
-          owner: u.owner_name,
+          floor: (u.floor ?? '').trim(),
           due: dueByUnit[u.id] ?? 0,
           paid: paidByUnit[u.id] ?? 0,
         }
@@ -240,17 +279,65 @@ export default function Dashboard() {
         </span>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: 'rgba(37, 99, 235, 0.1)' }}>
-            <Building2 size={24} color="var(--primary)" />
-          </div>
-          <div className="stat-content">
-            <div className="stat-label">Обекти</div>
-            <div className="stat-value">{stats.totalUnits}</div>
+      {!isViewer && (
+        <div className="dashboard-section dashboard-obligation-snapshot">
+          <h2 className="dashboard-section-title">Текущи задължения</h2>
+          <p className="dashboard-section-lead">
+            Обобщение по всички редове задължения: неплатената част е сумата, която още не е събрана от собствениците.
+          </p>
+          <div className="stats-grid dashboard-triple-stats">
+            <div className="stat-card">
+              <div className="stat-content">
+                <div className="stat-label">Всичко начислено</div>
+                <div className="stat-value">{obligationTotals.charged.toFixed(2)} €</div>
+              </div>
+            </div>
+            <div className="stat-card paid">
+              <div className="stat-content">
+                <div className="stat-label">Събрани</div>
+                <div className="stat-value">{obligationTotals.collected.toFixed(2)} €</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-content">
+                <div className="stat-label">Остава за събиране</div>
+                <div className="stat-value">{obligationTotals.remaining.toFixed(2)} €</div>
+              </div>
+            </div>
           </div>
         </div>
+      )}
 
+      {!isViewer && (
+        <div className="dashboard-section dashboard-liquid">
+          <h2 className="dashboard-section-title">Налични пари</h2>
+          <p className="dashboard-section-lead">
+            Наличност в каса и по банкова сметка (задават се от администратор в настройките на системата).
+          </p>
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ backgroundColor: 'rgba(37, 99, 235, 0.08)' }}>
+                <Wallet size={24} color="var(--primary)" />
+              </div>
+              <div className="stat-content">
+                <div className="stat-label">Кеш</div>
+                <div className="stat-value">{liquidBalances.cash.toFixed(2)} €</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ backgroundColor: 'rgba(14, 116, 144, 0.12)' }}>
+                <Landmark size={24} color="var(--primary)" />
+              </div>
+              <div className="stat-content">
+                <div className="stat-label">Сметка</div>
+                <div className="stat-value">{liquidBalances.bank.toFixed(2)} €</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
             <TrendingUp size={24} color="var(--success)" />
@@ -273,22 +360,14 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: 'rgba(100, 116, 139, 0.1)' }}>
-            <FileText size={24} color="var(--secondary)" />
-          </div>
-          <div className="stat-content">
-            <div className="stat-label">Документи{statsYear === 'all' ? '' : ` (${statsYear})`}</div>
-            <div className="stat-value">{stats.totalDocuments}</div>
-          </div>
-        </div>
       </div>
 
+      {!isViewer && (
       <div className="balance-card">
         <h2>
           {statsYear === 'all'
-            ? 'Обща наличност (очаквана каса)'
-            : `Очаквана каса за ${statsYear}`}
+            ? 'Оборот (по записи за избрания обхват)'
+            : `Оборот за ${statsYear} (по записи)`}
         </h2>
         <div className={`balance-amount ${balance >= 0 ? 'positive' : 'negative'}`}>
           {balance >= 0 ? '+' : ''}
@@ -311,10 +390,11 @@ export default function Dashboard() {
         </p>
         <p className="balance-description">
           {balance >= 0
-            ? 'Положителен баланс спрямо записаните приходи, плащания и разходи.'
-            : 'Отрицателен баланс — преразход спрямо записаните приходи, плащания и разходи.'}
+            ? 'Положителен резултат по другите приходи, плащанията от задължения и разходите за периода — отделно от редовете „Налични пари“ по-горе.'
+            : 'Отрицателен резултат по записаните приходи и разходи за периода.'}
         </p>
       </div>
+      )}
 
       <div className="dashboard-board-link-wrap">
         <Link to="/obligations-board" className="dashboard-board-link">
@@ -351,8 +431,7 @@ export default function Dashboard() {
           <div className="dashboard-viewer-panel">
             <h2>Справка по обекти (цялата сграда)</h2>
             <p className="dashboard-viewer-muted">
-              Собствениците виждат обобщена информация: текущо дължимо по задължения и постъпили плащания по
-              обект.
+              Показват се номер, етаж и суми по задължения — без лични данни за собственици.
             </p>
             {viewerSnapshotLoading ? (
               <p className="dashboard-viewer-muted">Зареждане…</p>
@@ -364,7 +443,7 @@ export default function Dashboard() {
                   <thead>
                     <tr>
                       <th>Обект</th>
-                      <th>Собственик</th>
+                      <th>Етаж</th>
                       <th className="num">Дължи (€)</th>
                       <th className="num">Платено (€)</th>
                     </tr>
@@ -373,7 +452,7 @@ export default function Dashboard() {
                     {viewerBuildingRows.map((r) => (
                       <tr key={r.unitId}>
                         <td>{r.label}</td>
-                        <td>{r.owner}</td>
+                        <td>{r.floor || '—'}</td>
                         <td className="num">{r.due.toFixed(2)}</td>
                         <td className="num">{r.paid.toFixed(2)}</td>
                       </tr>

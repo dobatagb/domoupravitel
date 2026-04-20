@@ -6,6 +6,7 @@ import { Plus, Download, Trash2, FileText, Image as ImageIcon } from 'lucide-rea
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Documents.css'
+import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 
 export interface DocumentCategoryRow {
   id: string
@@ -28,6 +29,7 @@ interface DocumentRow {
 
 type UnitLabel = {
   id: string
+  type?: string
   number: string | null
   owner_name: string | null
   group: { name: string | null } | null
@@ -35,7 +37,7 @@ type UnitLabel = {
 
 function unitDisplayLabel(u: UnitLabel): string {
   const g = u.group?.name
-  const n = u.number
+  const n = u.number != null ? formatUnitNumberDisplay(u.number) : ''
   return [g, n].filter(Boolean).join(' ') || u.owner_name || u.id.slice(0, 8)
 }
 
@@ -76,13 +78,13 @@ export default function Documents() {
         supabase.from('document_categories').select('id, code, name').order('sort_order', { ascending: true }),
         supabase
           .from('units')
-          .select('id, number, owner_name, group:group_id (name)')
+          .select('id, type, number, owner_name, group:group_id (name)')
           .order('type', { ascending: true })
           .order('number', { ascending: true }),
       ])
       if (catErr) throw catErr
       setDocumentCategories((catData ?? []) as DocumentCategoryRow[])
-      setUnits(((uData ?? []) as unknown) as UnitLabel[])
+      setUnits(sortUnitsByTypeAndNumber(((uData ?? []) as unknown) as UnitLabel[]))
 
       const { data, error } = await supabaseQuery(() =>
         supabase

@@ -7,6 +7,8 @@ import { Filter, Edit2, Plus, Trash2, ChevronRight, History } from 'lucide-react
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import { useUnitGroups } from '../hooks/useUnitGroups'
+import { sortUnitsByTypeAndNumber } from '../lib/unitNumber'
+import { unitOptionLabel } from '../lib/unitOptionLabel'
 import './Obligations.css'
 
 interface PaymentAllocationRow {
@@ -94,7 +96,6 @@ interface ObligationLine {
   amount_original: number
   amount_remaining: number
   sort_key: number
-  allocCount: number
   periodName: string | null
 }
 
@@ -207,15 +208,6 @@ export default function Obligations() {
         amount_remaining: number | string
         sort_key: number
       }>
-      const ids = list.map((r) => r.id)
-      const countMap: Record<string, number> = {}
-      if (ids.length > 0) {
-        const { data: allocs } = await supabase.from('payment_allocations').select('unit_obligation_id').in('unit_obligation_id', ids)
-        for (const a of allocs || []) {
-          const id = (a as { unit_obligation_id: string }).unit_obligation_id
-          countMap[id] = (countMap[id] ?? 0) + 1
-        }
-      }
       const periodIds = [...new Set(list.map((r) => r.billing_period_id).filter(Boolean))] as string[]
       const periodNameMap: Record<string, string> = {}
       if (periodIds.length > 0) {
@@ -234,7 +226,6 @@ export default function Obligations() {
         amount_original: typeof r.amount_original === 'string' ? parseFloat(r.amount_original) : Number(r.amount_original),
         amount_remaining: typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining),
         sort_key: r.sort_key,
-        allocCount: countMap[r.id] ?? 0,
         periodName: r.billing_period_id ? periodNameMap[r.billing_period_id] ?? null : null,
       }))
       setObligationLines(enriched)
@@ -474,15 +465,12 @@ export default function Obligations() {
       return
     }
     try {
-      if (!payment.income_id) {
-        const { error } = await supabaseQuery(() =>
-          supabase.rpc('delete_payment_with_restore', { p_payment_id: payment.id })
-        )
-        if (error) throw error
-      } else {
-        const { error } = await supabase.from('payments').delete().eq('id', payment.id)
-        if (error) throw error
-      }
+      // Винаги RPC: при директен DELETE плащанията CASCADE махат payment_allocations, но не
+      // възстановяват amount_remaining в unit_obligations (проблем при плащания „от приход“).
+      const { error } = await supabaseQuery(() =>
+        supabase.rpc('delete_payment_with_restore', { p_payment_id: payment.id })
+      )
+      if (error) throw error
       await fetchPayments()
       await fetchDueByUnitFromDb()
       await fetchOblAggByUnit()
@@ -577,10 +565,64 @@ export default function Obligations() {
 
   const deleteObligationLine = async (row: ObligationLine) => {
     if (!canEdit()) return
-    if (row.allocCount > 0) {
-      alert(
-        'Този ред има приспадания от плащания. Първо премахни или коригирай свързаните плащания (изтрий плащането с възстановяване), после опитай отново.'
-      )
+    /** Броим приспаданията директно в базата преди изтриване. */
+    let allocNow = 0
+    try {
+      const { count, error: cErr } = await supabase
+        .from('payment_allocations')
+        .select('id', { count: 'exact', head: true })
+        .eq('unit_obligation_id', row.id)
+      if (cErr) throw cErr
+      allocNow = count ?? 0
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Грешка при проверка на приспаданията.')
+      return
+    }
+
+    if (allocNow > 0) {
+      try {
+        const { data: allocs, error: aErr } = await supabase
+          .from('payment_allocations')
+          .select('amount, payment_id, payments ( id, payment_date, amount, income_id )')
+          .eq('unit_obligation_id', row.id)
+        if (aErr) throw aErr
+        const parts: string[] = []
+        for (const raw of allocs || []) {
+          const a = raw as {
+            amount: number | string
+            payment_id: string
+            payments:
+              | { id: string; payment_date: string | null; amount: number | string; income_id: string | null }
+              | { id: string; payment_date: string | null; amount: number | string; income_id: string | null }[]
+              | null
+          }
+          let p = a.payments
+          if (Array.isArray(p)) p = p[0] ?? null
+          if (!p) continue
+          const pamt = typeof p.amount === 'string' ? parseFloat(p.amount) : Number(p.amount)
+          const al = typeof a.amount === 'string' ? parseFloat(a.amount) : Number(a.amount)
+          const d = p.payment_date
+            ? format(new Date(p.payment_date), 'dd.MM.yyyy', { locale: bg })
+            : '—'
+          const fromIncome = p.income_id ? ' (от приход)' : ''
+          parts.push(
+            `• ${d} — плащане общо ${Number.isFinite(pamt) ? pamt.toFixed(2) : '?'} €${fromIncome}, приспадане към този ред: ${Number.isFinite(al) ? al.toFixed(2) : '?'} € (id: ${p.id.slice(0, 8)}…)`,
+          )
+        }
+        const detail =
+          parts.length > 0
+            ? `\n\nСвързани приспадания:\n${parts.join('\n')}\n`
+            : `\n\nВ базата има още ${allocNow} приспадане(я), но детайлите не се показаха (напр. липсващо плащане). Опресни страницата (F5) и опитай отново, или провери в Supabase таблица payment_allocations.\n`
+        alert(
+          `Не може да се изтрие задължението „${row.title}“, докато има приспадания към него.${detail}\nКакво да направиш:\n1) Превърти надолу до списъка „Плащания“ (или филтрирай по същия обект).\n2) Намери тези плащания и ги изтрий — за плащания от «Задължения» се възстановяват задълженията автоматично.\n3) Плащания, вързани с приход („от приход“), се трият оттук само ако позволява системата; при нужда коригирай в «Финанси».\n\nСлед това опитай изтриване на реда отново.`,
+        )
+      } catch (e: unknown) {
+        alert(
+          e instanceof Error
+            ? e.message
+            : 'Този ред има приспадания от плащания. Първо изтрий свързаните плащания от списъка по-долу (с възстановяване на задълженията), после опитай отново.',
+        )
+      }
       return
     }
     if (
@@ -799,9 +841,12 @@ export default function Obligations() {
             className="filter-select"
           >
             <option value="all">Всички обекти</option>
-            {units.map((unit) => (
+            {sortUnitsByTypeAndNumber(units).map((unit) => (
               <option key={unit.id} value={unit.id}>
-                {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
+                {unitOptionLabel(
+                  { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
+                  labelForCode
+                )}
               </option>
             ))}
           </select>
@@ -834,7 +879,6 @@ export default function Obligations() {
                     <th>Заглавие</th>
                     <th className="num">Оригинал</th>
                     <th className="num">Остатък</th>
-                    <th className="num">Приспад.</th>
                     {canEdit() && <th>Действия</th>}
                   </tr>
                 </thead>
@@ -854,7 +898,6 @@ export default function Obligations() {
                         <td>{row.title}</td>
                         <td className="num">{row.amount_original.toFixed(2)} €</td>
                         <td className="num">{row.amount_remaining.toFixed(2)} €</td>
-                        <td className="num">{row.allocCount > 0 ? `${row.allocCount} р.` : '—'}</td>
                         {canEdit() && (
                           <td>
                             <div className="payment-row-actions">
@@ -981,9 +1024,12 @@ export default function Obligations() {
                   required
                 >
                   <option value="">— Избери обект —</option>
-                  {units.map((unit) => (
+                  {sortUnitsByTypeAndNumber(units).map((unit) => (
                     <option key={unit.id} value={unit.id}>
-                      {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
+                      {unitOptionLabel(
+                        { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
+                        labelForCode
+                      )}
                     </option>
                   ))}
                 </select>
@@ -1037,9 +1083,12 @@ export default function Obligations() {
                   required
                 >
                   <option value="">— Избери обект —</option>
-                  {units.map((unit) => (
+                  {sortUnitsByTypeAndNumber(units).map((unit) => (
                     <option key={unit.id} value={unit.id}>
-                      {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
+                      {unitOptionLabel(
+                        { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
+                        labelForCode
+                      )}
                     </option>
                   ))}
                 </select>

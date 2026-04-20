@@ -75,6 +75,7 @@ export default function Layout() {
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
         { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/finances', label: 'Финанси', icon: Wallet },
+        { path: '/movements', label: 'Движения', icon: History },
         { path: '/documents', label: 'Документи', icon: FileText },
         { path: '/parking-lottery', label: 'Томбола паркоместа', icon: Dices },
       ]

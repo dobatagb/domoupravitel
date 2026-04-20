@@ -4,12 +4,13 @@ import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeS
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { IncomeRecords } from './Income'
 import Expenses from './Expenses'
+import FinancesLiquidity from './FinancesLiquidity'
 import './Income.css'
 import './Expenses.css'
 
 export default function Finances() {
   const [year, setYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
-  const [tab, setTab] = useState<'income' | 'expenses'>('expenses')
+  const [tab, setTab] = useState<'liquidity' | 'income' | 'expenses'>('liquidity')
   const [incomeSum, setIncomeSum] = useState(0)
   const [expenseSum, setExpenseSum] = useState(0)
 
@@ -54,17 +55,20 @@ export default function Finances() {
             Финанси
           </h1>
           <p>
-            Обобщение по избрана календарна година. Постъпленията от такси и месечни задължения се записват в{' '}
-            <strong>Задължения</strong> (плащания). Табът „Други приходи“ е за допълнителни редове в таблицата приходи
-            (входна такса и др.), ако ги ползвате.
+            <strong>Налични пари</strong> — кеш и сметка (с автоматично увеличение при плащания в брой / банков превод от
+            «Задължения», след миграция 049). Останалите табове са по избрана година: други приходи и разходи.
+            Постъпленията от такси се записват през <strong>Задължения</strong> (плащания).
           </p>
         </div>
       </div>
 
-      <div className="page-toolbar">
-        <YearScopeSelect value={year} onChange={setYear} id="finances-year" />
-      </div>
+      {tab !== 'liquidity' && (
+        <div className="page-toolbar">
+          <YearScopeSelect value={year} onChange={setYear} id="finances-year" />
+        </div>
+      )}
 
+      {tab !== 'liquidity' && (
       <div
         className="income-summary-cards"
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}
@@ -86,8 +90,12 @@ export default function Finances() {
           <div className="summary-amount">{balance.toFixed(2)} €</div>
         </div>
       </div>
+      )}
 
-      <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '1.25rem' }}>
+        <button type="button" style={tabBtn(tab === 'liquidity')} onClick={() => setTab('liquidity')}>
+          Налични пари
+        </button>
         <button type="button" style={tabBtn(tab === 'income')} onClick={() => setTab('income')}>
           Други приходи
         </button>
@@ -96,7 +104,9 @@ export default function Finances() {
         </button>
       </div>
 
-      {tab === 'income' ? <IncomeRecords year={year} embedded /> : <Expenses yearScope={year} embedded />}
+      {tab === 'liquidity' && <FinancesLiquidity />}
+      {tab === 'income' && <IncomeRecords year={year} embedded />}
+      {tab === 'expenses' && <Expenses yearScope={year} embedded />}
     </div>
   )
 }

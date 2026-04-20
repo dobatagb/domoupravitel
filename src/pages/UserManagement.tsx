@@ -5,6 +5,7 @@ import { Users, Plus, Link2, Trash2 } from 'lucide-react'
 import type { UserRole } from '../lib/supabase'
 import './Units.css'
 import './UserManagement.css'
+import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 
 type AppUser = {
   id: string
@@ -14,6 +15,7 @@ type AppUser = {
 
 type UnitRow = {
   id: string
+  type?: string
   number: string
   group?: { name: string } | null
 }
@@ -26,7 +28,8 @@ type LinkRow = {
 
 function unitLabel(u: UnitRow): string {
   const g = u.group?.name?.trim()
-  return g ? `${g} ${u.number}` : u.number
+  const n = formatUnitNumberDisplay(u.number)
+  return g ? `${g} ${n}` : n
 }
 
 export default function UserManagement() {
@@ -52,14 +55,14 @@ export default function UserManagement() {
   const load = useCallback(async () => {
     const [uRes, unitRes, linkRes] = await Promise.all([
       supabase.from('users').select('id, email, role').order('email'),
-      supabase.from('units').select('id, number, group:group_id(name)').order('type').order('number'),
+      supabase.from('units').select('id, type, number, group:group_id(name)').order('type').order('number'),
       supabase.from('user_unit_links').select('id, user_id, unit_id'),
     ])
     if (uRes.error) throw uRes.error
     if (unitRes.error) throw unitRes.error
     if (linkRes.error) throw linkRes.error
     setUsers((uRes.data as AppUser[]) || [])
-    setUnits((unitRes.data as unknown as UnitRow[]) || [])
+    setUnits(sortUnitsByTypeAndNumber((unitRes.data as unknown as UnitRow[]) || []))
     setLinks((linkRes.data as LinkRow[]) || [])
   }, [])
 

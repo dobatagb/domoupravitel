@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, Edit2, Trash2, Filter } from 'lucide-react'
 import { useUnitGroups } from '../hooks/useUnitGroups'
+import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 import type { UnitGroup } from '../types/unitGroup'
 import './Units.css'
 
@@ -12,8 +13,8 @@ interface Unit {
   group_id: string
   type: string
   number: string
-  area: number
-  owner_name: string
+  area?: number
+  owner_name?: string
   owner_email: string | null
   owner_phone: string | null
   tenant_name: string | null
@@ -31,6 +32,10 @@ const unitSelectFields = `
           group:group_id (*)
         `
 
+function formatMoneyBg(n: number): string {
+  return `${n.toLocaleString('bg-BG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+}
+
 export default function Units() {
   const { canEdit, userRole, user } = useAuth()
   const isViewer = userRole === 'viewer'
@@ -40,6 +45,8 @@ export default function Units() {
   const [showModal, setShowModal] = useState(false)
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
   const [filterGroupId, setFilterGroupId] = useState<string | 'all'>('all')
+  /** За viewer: редове задължения с остатък по unit_id. */
+  const [viewerDueLines, setViewerDueLines] = useState<Record<string, { title: string; rem: number }[]>>({})
   const [formData, setFormData] = useState({
     group_id: '',
     number: '',
@@ -66,6 +73,7 @@ export default function Units() {
       if (isViewer) {
         if (!user?.id) {
           setUnits([])
+          setViewerDueLines({})
           return
         }
         const { data: links, error: linkErr } = await supabase
@@ -76,16 +84,34 @@ export default function Units() {
         const ids = (links || []).map((r: { unit_id: string }) => r.unit_id)
         if (ids.length === 0) {
           setUnits([])
+          setViewerDueLines({})
           return
         }
         const { data, error } = await supabase
           .from('units')
-          .select(unitSelectFields)
+          .select('id, group_id, type, number, floor, opening_balance, group:group_id (*)')
           .in('id', ids)
-          .order('type', { ascending: true })
-          .order('number', { ascending: true })
         if (error) throw error
-        setUnits((data as Unit[]) || [])
+        const list = sortUnitsByTypeAndNumber((data as Unit[]) || [])
+        setUnits(list)
+        const { data: obl, error: oblErr } = await supabase
+          .from('unit_obligations')
+          .select('unit_id, title, amount_remaining')
+          .in('unit_id', ids)
+          .gt('amount_remaining', 0.005)
+        if (!oblErr && obl) {
+          const m: Record<string, { title: string; rem: number }[]> = {}
+          for (const raw of obl) {
+            const r = raw as { unit_id: string; title: string; amount_remaining: number | string }
+            const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
+            if (!Number.isFinite(rem) || rem <= 0) continue
+            if (!m[r.unit_id]) m[r.unit_id] = []
+            m[r.unit_id].push({ title: r.title || 'Задължение', rem })
+          }
+          setViewerDueLines(m)
+        } else {
+          setViewerDueLines({})
+        }
         return
       }
 
@@ -108,6 +134,7 @@ export default function Units() {
       if (isViewer) {
         if (!user?.id) {
           setUnits([])
+          setViewerDueLines({})
           return
         }
         const { data: links } = await supabase
@@ -117,16 +144,34 @@ export default function Units() {
         const ids = (links || []).map((r: { unit_id: string }) => r.unit_id)
         if (ids.length === 0) {
           setUnits([])
+          setViewerDueLines({})
           return
         }
         const { data, error } = await supabase
           .from('units')
-          .select(unitSelectFields)
+          .select('id, group_id, type, number, floor, opening_balance, group:group_id (*)')
           .in('id', ids)
-          .order('type', { ascending: true })
-          .order('number', { ascending: true })
         if (error) throw error
-        setUnits((data as Unit[]) || [])
+        const list = sortUnitsByTypeAndNumber((data as Unit[]) || [])
+        setUnits(list)
+        const { data: obl, error: oblErr } = await supabase
+          .from('unit_obligations')
+          .select('unit_id, title, amount_remaining')
+          .in('unit_id', ids)
+          .gt('amount_remaining', 0.005)
+        if (!oblErr && obl) {
+          const m: Record<string, { title: string; rem: number }[]> = {}
+          for (const raw of obl) {
+            const r = raw as { unit_id: string; title: string; amount_remaining: number | string }
+            const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
+            if (!Number.isFinite(rem) || rem <= 0) continue
+            if (!m[r.unit_id]) m[r.unit_id] = []
+            m[r.unit_id].push({ title: r.title || 'Задължение', rem })
+          }
+          setViewerDueLines(m)
+        } else {
+          setViewerDueLines({})
+        }
         return
       }
       const { data, error } = await supabase
@@ -143,38 +188,8 @@ export default function Units() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isViewer) return
     try {
-      if (isViewer && editingUnit) {
-        const areaRaw = formData.area.trim().replace(',', '.')
-        const area = parseFloat(areaRaw)
-        if (Number.isNaN(area) || area <= 0) {
-          alert('Квадратурата трябва да е положително число (напр. 65 или 65,5).')
-          return
-        }
-
-        const { error } = await supabase
-          .from('units')
-          .update({
-            area,
-            owner_name: formData.owner_name,
-            owner_email: formData.owner_email || null,
-            owner_phone: formData.owner_phone || null,
-            tenant_name: formData.tenant_name || null,
-            tenant_email: formData.tenant_email || null,
-            tenant_phone: formData.tenant_phone || null,
-            notes: formData.notes || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', editingUnit.id)
-
-        if (error) throw error
-        setShowModal(false)
-        setEditingUnit(null)
-        resetForm()
-        fetchUnits()
-        return
-      }
-
       const selectedGroup = groups.find((g) => g.id === formData.group_id)
       if (!selectedGroup) {
         alert('Изберете група обект.')
@@ -234,12 +249,13 @@ export default function Units() {
   }
 
   const handleEdit = (unit: Unit) => {
+    if (isViewer) return
     setEditingUnit(unit)
     setFormData({
       group_id: unit.group_id,
       number: unit.number,
-      area: unit.area.toString(),
-      owner_name: unit.owner_name,
+      area: String(unit.area ?? ''),
+      owner_name: unit.owner_name ?? '',
       owner_email: unit.owner_email || '',
       owner_phone: unit.owner_phone || '',
       tenant_name: unit.tenant_name || '',
@@ -306,7 +322,7 @@ export default function Units() {
           <h1>{isViewer ? 'Мои обекти' : 'Обекти'}</h1>
           <p>
             {isViewer
-              ? 'Контакти на собственик и наемател по вашите обекти. Можете да коригирате квадратурата; група, номер и задължения се управляват от домоуправителя.'
+              ? 'Преглед по номер и етаж. Данните за обектите въвежда домоуправителят; по-долу са текущите задължения с остатък (заглавията са като в „Задължения“ и „Периоди“).'
               : 'Управление на апартаменти, гаражи, магазини и паркоместа'}
           </p>
           {canEdit() && (
@@ -355,29 +371,70 @@ export default function Units() {
               : 'Няма регистрирани обекти'}
           </div>
         ) : (
-          filteredUnits.map((unit) => {
+          sortUnitsByTypeAndNumber(filteredUnits).map((unit) => {
+            if (isViewer) {
+              const lines = viewerDueLines[unit.id]
+              return (
+                <div key={unit.id} className="unit-card unit-card-viewer">
+                  <div className="unit-header">
+                    <h3>
+                      Ап. {formatUnitNumberDisplay(unit.number)}
+                      {unit.group?.name ? (
+                        <span className="unit-card-viewer-group"> · {unit.group.name}</span>
+                      ) : null}
+                    </h3>
+                  </div>
+                  <div className="unit-details">
+                    {unit.floor?.trim() && (
+                      <div className="detail-item">
+                        <span className="detail-label">Етаж:</span>
+                        <span className="detail-value">{unit.floor}</span>
+                      </div>
+                    )}
+                    <div className="viewer-due-section">
+                      <div className="detail-label" style={{ marginBottom: '0.35rem' }}>
+                        Текущи задължения (остатък)
+                      </div>
+                      {lines && lines.length > 0 ? (
+                        <ul className="viewer-due-list">
+                          {lines.map((line, i) => (
+                            <li key={`${line.title}-${i}`}>
+                              <span className="viewer-due-title">{line.title}</span>
+                              <span className="viewer-due-amt">{formatMoneyBg(line.rem)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="form-hint" style={{ margin: 0 }}>
+                          Няма остатък по задължения към момента.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            }
             const openingBal =
               unit.opening_balance != null && unit.opening_balance !== ''
                 ? Number(unit.opening_balance)
                 : 0
             return (
-            <div key={unit.id} className="unit-card">
-              <div className="unit-header">
-                <div>
-                  <h3>
-                    {unit.group?.name ?? labelForCode(unit.type)} {unit.number}
-                  </h3>
-                </div>
-                {(canEdit() || isViewer) && (
-                  <div className="unit-actions">
-                    <button
-                      className="icon-btn"
-                      onClick={() => handleEdit(unit)}
-                      title={isViewer ? 'Редактирай данни' : 'Редактирай'}
-                    >
-                      <Edit2 size={18} />
-                    </button>
-                    {canEdit() && (
+              <div key={unit.id} className="unit-card">
+                <div className="unit-header">
+                  <div>
+                    <h3>
+                      {unit.group?.name ?? labelForCode(unit.type)} {formatUnitNumberDisplay(unit.number)}
+                    </h3>
+                  </div>
+                  {canEdit() && (
+                    <div className="unit-actions">
+                      <button
+                        className="icon-btn"
+                        onClick={() => handleEdit(unit)}
+                        title="Редактирай"
+                      >
+                        <Edit2 size={18} />
+                      </button>
                       <button
                         className="icon-btn danger"
                         onClick={() => handleDelete(unit.id)}
@@ -385,77 +442,65 @@ export default function Units() {
                       >
                         <Trash2 size={18} />
                       </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="unit-details">
-                <div className="detail-item">
-                  <span className="detail-label">Квадратура:</span>
-                  <span className="detail-value">{unit.area} м²</span>
+                    </div>
+                  )}
                 </div>
-                {unit.floor?.trim() && (
+                <div className="unit-details">
                   <div className="detail-item">
-                    <span className="detail-label">Етаж:</span>
-                    <span className="detail-value">{unit.floor}</span>
+                    <span className="detail-label">Квадратура:</span>
+                    <span className="detail-value">{unit.area ?? '—'} м²</span>
                   </div>
-                )}
-                <div className="detail-item">
-                  <span className="detail-label">Собственик:</span>
-                  <span className="detail-value">{unit.owner_name}</span>
+                  {unit.floor?.trim() && (
+                    <div className="detail-item">
+                      <span className="detail-label">Етаж:</span>
+                      <span className="detail-value">{unit.floor}</span>
+                    </div>
+                  )}
+                  <div className="detail-item">
+                    <span className="detail-label">Собственик:</span>
+                    <span className="detail-value">{unit.owner_name ?? '—'}</span>
+                  </div>
+                  {unit.owner_email && (
+                    <div className="detail-item">
+                      <span className="detail-label">Имейл:</span>
+                      <span className="detail-value">{unit.owner_email}</span>
+                    </div>
+                  )}
+                  {unit.owner_phone && (
+                    <div className="detail-item">
+                      <span className="detail-label">Телефон:</span>
+                      <span className="detail-value">{unit.owner_phone}</span>
+                    </div>
+                  )}
+                  {unit.tenant_name && (
+                    <div className="detail-item tenant">
+                      <span className="detail-label">Наемател:</span>
+                      <span className="detail-value">{unit.tenant_name}</span>
+                    </div>
+                  )}
+                  {unit.tenant_email && (
+                    <div className="detail-item tenant">
+                      <span className="detail-label">Имейл (наемател):</span>
+                      <span className="detail-value">{unit.tenant_email}</span>
+                    </div>
+                  )}
+                  {openingBal > 0 && (
+                    <div className="detail-item">
+                      <span className="detail-label">Пренесен дълг:</span>
+                      <span className="detail-value">{openingBal.toFixed(2)} €</span>
+                    </div>
+                  )}
                 </div>
-                {unit.owner_email && (
-                  <div className="detail-item">
-                    <span className="detail-label">Имейл:</span>
-                    <span className="detail-value">{unit.owner_email}</span>
-                  </div>
-                )}
-                {unit.owner_phone && (
-                  <div className="detail-item">
-                    <span className="detail-label">Телефон:</span>
-                    <span className="detail-value">{unit.owner_phone}</span>
-                  </div>
-                )}
-                {unit.tenant_name && (
-                  <div className="detail-item tenant">
-                    <span className="detail-label">Наемател:</span>
-                    <span className="detail-value">{unit.tenant_name}</span>
-                  </div>
-                )}
-                {unit.tenant_email && (
-                  <div className="detail-item tenant">
-                    <span className="detail-label">Имейл (наемател):</span>
-                    <span className="detail-value">{unit.tenant_email}</span>
-                  </div>
-                )}
-                {openingBal > 0 && (
-                  <div className="detail-item">
-                    <span className="detail-label">Пренесен дълг:</span>
-                    <span className="detail-value">{openingBal.toFixed(2)} €</span>
-                  </div>
-                )}
               </div>
-            </div>
             )
           })
         )}
       </div>
 
-      {showModal && (
+      {showModal && canEdit() && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>
-              {isViewer && editingUnit
-                ? 'Редактирай данни'
-                : editingUnit
-                  ? 'Редактирай обект'
-                  : 'Добави обект'}
-            </h2>
-            {isViewer && (
-              <p className="form-hint" style={{ marginBottom: '1rem' }}>
-                Можете да променяте квадратура, данните за собственик, наемател и бележки.
-              </p>
-            )}
+            <h2>{editingUnit ? 'Редактирай обект' : 'Добави обект'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label>Група обект *</label>
@@ -465,7 +510,6 @@ export default function Units() {
                     setFormData({ ...formData, group_id: e.target.value })
                   }}
                   required
-                  disabled={isViewer}
                 >
                   <option value="">Изберете…</option>
                   {sortedGroups.map((g) => (
@@ -485,7 +529,6 @@ export default function Units() {
                     setFormData({ ...formData, number: e.target.value })
                   }
                   required
-                  disabled={isViewer}
                   placeholder="Напр. 5, 12, A1"
                 />
               </div>
@@ -505,24 +548,15 @@ export default function Units() {
                 />
               </div>
 
-              {isViewer && editingUnit?.floor?.trim() && (
-                <div className="form-group">
-                  <label>Етаж</label>
-                  <input type="text" value={editingUnit.floor ?? ''} readOnly disabled />
-                </div>
-              )}
-
-              {!isViewer && (
-                <div className="form-group">
-                  <label>Етаж</label>
-                  <input
-                    type="text"
-                    value={formData.floor}
-                    onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
-                    placeholder="Напр. 5, партер, мансарда"
-                  />
-                </div>
-              )}
+              <div className="form-group">
+                <label>Етаж</label>
+                <input
+                  type="text"
+                  value={formData.floor}
+                  onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+                  placeholder="Напр. 5, партер, мансарда"
+                />
+              </div>
 
               <div className="form-section">
                 <h3>Собственик</h3>
