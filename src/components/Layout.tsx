@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -18,6 +18,8 @@ import {
   Megaphone,
   Settings,
   Dices,
+  Menu,
+  X,
 } from 'lucide-react'
 import { usePwaInstall } from '../hooks/usePwaInstall'
 import './Layout.css'
@@ -33,6 +35,40 @@ export default function Layout() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const closeMobileMenu = () => setMobileMenuOpen(false)
+
+  useEffect(() => {
+    closeMobileMenu()
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const onResize = () => {
+      if (typeof window !== 'undefined' && window.innerWidth > 768) closeMobileMenu()
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [mobileMenuOpen])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [mobileMenuOpen])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMobileMenu()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileMenuOpen])
 
   const closeSettings = () => {
     setSettingsOpen(false)
@@ -97,7 +133,30 @@ export default function Layout() {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <header className="layout-mobile-header">
+        <button
+          type="button"
+          className="layout-mobile-menu-btn"
+          onClick={() => setMobileMenuOpen((o) => !o)}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="sidebar-nav"
+          aria-label={mobileMenuOpen ? 'Затвори меню' : 'Отвори меню'}
+        >
+          {mobileMenuOpen ? <X size={22} strokeWidth={2.25} aria-hidden /> : <Menu size={22} strokeWidth={2.25} aria-hidden />}
+        </button>
+        <span className="layout-mobile-title">Домоуправител</span>
+      </header>
+
+      {mobileMenuOpen && (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Затвори меню"
+          onClick={closeMobileMenu}
+        />
+      )}
+
+      <aside className={`sidebar${mobileMenuOpen ? ' sidebar--open' : ''}`}>
         <div className="sidebar-header">
           <h1>Домоуправител</h1>
           <div className="user-info">
@@ -108,7 +167,10 @@ export default function Layout() {
               <button
                 type="button"
                 className="user-settings-btn"
-                onClick={() => setSettingsOpen(true)}
+                onClick={() => {
+                  closeMobileMenu()
+                  setSettingsOpen(true)
+                }}
                 aria-label="Настройки — смяна на парола"
                 title="Настройки"
               >
@@ -121,7 +183,10 @@ export default function Layout() {
             <button
               type="button"
               className="pwa-install-btn"
-              onClick={() => void promptInstall()}
+              onClick={() => {
+                closeMobileMenu()
+                void promptInstall()
+              }}
             >
               <Download size={18} aria-hidden />
               <span>Инсталирай приложението</span>
@@ -133,7 +198,7 @@ export default function Layout() {
             </p>
           )}
         </div>
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" id="sidebar-nav">
           {navItems.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
@@ -142,14 +207,22 @@ export default function Layout() {
                 key={item.path}
                 to={item.path}
                 className={`nav-item ${isActive ? 'active' : ''}`}
+                onClick={closeMobileMenu}
               >
-                <Icon size={20} />
+                <Icon size={20} aria-hidden />
                 <span>{item.label}</span>
               </Link>
             )
           })}
         </nav>
-        <button type="button" className="logout-btn" onClick={() => void signOut()}>
+        <button
+          type="button"
+          className="logout-btn"
+          onClick={() => {
+            closeMobileMenu()
+            void signOut()
+          }}
+        >
           <LogOut size={20} />
           <span>Изход</span>
         </button>
