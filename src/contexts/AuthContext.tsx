@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
-import { User, Session } from '@supabase/supabase-js'
+import { User, Session, type PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { UserRole } from '../lib/supabase'
 
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.id) return
     const ping = () => {
-      void supabase.rpc('touch_user_last_active').then((result) => {
+      void supabase.rpc('touch_user_last_active').then((result: { error: PostgrestError | null }) => {
         if (result.error) {
           console.warn('[Auth] touch_user_last_active:', result.error.message, '— миграция 053?')
         }
