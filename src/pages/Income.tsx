@@ -19,6 +19,8 @@ export interface IncomeRow {
   period_start: string | null
   period_end: string | null
   created_at: string
+  /** Къде влиза сумата за наличност; след миграция 051 */
+  received_to?: 'cash' | 'bank_transfer' | null
 }
 
 type UnitOpt = {
@@ -63,6 +65,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
     unit_id: '',
     period_start: '',
     period_end: '',
+    received_to: 'cash' as 'cash' | 'bank_transfer',
   })
 
   const fetchUnits = useCallback(async () => {
@@ -110,6 +113,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
       unit_id: '',
       period_start: '',
       period_end: '',
+      received_to: 'cash',
     })
   }
 
@@ -130,6 +134,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
       unit_id: unitId,
       period_start: formData.period_start.trim() || null,
       period_end: formData.period_end.trim() || null,
+      received_to: formData.received_to,
     }
 
     try {
@@ -159,6 +164,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
       unit_id: row.unit_id || '',
       period_start: row.period_start?.split('T')[0] || '',
       period_end: row.period_end?.split('T')[0] || '',
+      received_to: row.received_to === 'bank_transfer' ? 'bank_transfer' : 'cash',
     })
     setShowModal(true)
   }
@@ -217,6 +223,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
               <th>Дата</th>
               <th>Тип</th>
               <th>Описание</th>
+              <th>Къде</th>
               <th>Обект</th>
               <th>Сума</th>
               {canEdit() && <th>Действия</th>}
@@ -225,7 +232,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={canEdit() ? 6 : 5} className="empty-cell">
+                <td colSpan={canEdit() ? 7 : 6} className="empty-cell">
                   Няма записани приходи за избрания период
                 </td>
               </tr>
@@ -237,6 +244,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
                     <span className="income-type-badge">{typeLabels[row.type] ?? row.type}</span>
                   </td>
                   <td>{row.description}</td>
+                  <td>{row.received_to === 'bank_transfer' ? 'Сметка' : 'Каса'}</td>
                   <td className="income-unit-cell">
                     {row.unit_id ? unitMap[row.unit_id] ?? '—' : '—'}
                   </td>
@@ -299,6 +307,18 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
               <div className="form-group">
                 <label>Дата *</label>
                 <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="income-received-to">Прието в * (наличност)</label>
+                <select
+                  id="income-received-to"
+                  value={formData.received_to}
+                  onChange={(e) => setFormData({ ...formData, received_to: e.target.value as 'cash' | 'bank_transfer' })}
+                  required
+                >
+                  <option value="cash">Каса (в брой)</option>
+                  <option value="bank_transfer">Банкова сметка</option>
+                </select>
               </div>
               <div className="form-group">
                 <label>Обект (опционално)</label>

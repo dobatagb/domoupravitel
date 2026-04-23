@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Wallet } from 'lucide-react'
 import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
 import { supabase, supabaseQuery } from '../lib/supabase'
@@ -9,10 +10,27 @@ import './Income.css'
 import './Expenses.css'
 
 export default function Finances() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [year, setYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
   const [tab, setTab] = useState<'liquidity' | 'income' | 'expenses'>('liquidity')
   const [incomeSum, setIncomeSum] = useState(0)
   const [expenseSum, setExpenseSum] = useState(0)
+
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t === 'expenses' || t === 'income' || t === 'liquidity') {
+      setTab(t)
+    }
+  }, [searchParams])
+
+  const goTab = (next: 'liquidity' | 'income' | 'expenses') => {
+    setTab(next)
+    if (next === 'liquidity') {
+      setSearchParams({}, { replace: true })
+    } else {
+      setSearchParams({ tab: next }, { replace: true })
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -93,13 +111,13 @@ export default function Finances() {
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '1.25rem' }}>
-        <button type="button" style={tabBtn(tab === 'liquidity')} onClick={() => setTab('liquidity')}>
+        <button type="button" style={tabBtn(tab === 'liquidity')} onClick={() => goTab('liquidity')}>
           Налични пари
         </button>
-        <button type="button" style={tabBtn(tab === 'income')} onClick={() => setTab('income')}>
+        <button type="button" style={tabBtn(tab === 'income')} onClick={() => goTab('income')}>
           Други приходи
         </button>
-        <button type="button" style={tabBtn(tab === 'expenses')} onClick={() => setTab('expenses')}>
+        <button type="button" style={tabBtn(tab === 'expenses')} onClick={() => goTab('expenses')}>
           Разходи
         </button>
       </div>

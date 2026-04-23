@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { openPublicStorageInNewTab, rawBodyForStorageUpload } from '../lib/storageUpload'
 import { useAuth } from '../contexts/AuthContext'
-import { Plus, Download, Trash2, FileText, Image as ImageIcon } from 'lucide-react'
+import { Plus, Download, Trash2, FileText, Image as ImageIcon, Link2, ExternalLink } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Documents.css'
@@ -17,14 +17,15 @@ export interface DocumentCategoryRow {
 interface DocumentRow {
   id: string
   name: string
-  file_path: string
-  file_type: string
+  file_path: string | null
+  file_type: string | null
   description: string | null
   document_category_id: string | null
   document_categories: DocumentCategoryRow | null
   related_type: 'expense' | 'income' | 'unit' | null
   related_id: string | null
   created_at: string
+  external_url?: string | null
 }
 
 type UnitLabel = {
@@ -69,7 +70,9 @@ export default function Documents() {
     document_category_id: '' as string,
     unit_id: '' as string,
     file: null as File | null,
+    external_url: '',
   })
+  const [addMode, setAddMode] = useState<'file' | 'link'>('file')
 
   const loadPage = useCallback(async () => {
     setLoading(true)
@@ -133,8 +136,66 @@ export default function Documents() {
     return documents.filter((d) => d.document_category_id === categoryFilter)
   }, [documents, categoryFilter])
 
-  const handleFileUpload = async (e: React.FormEvent) => {
+  const normalizeUrl = (raw: string): string => {
+    const t = raw.trim()
+    if (!t) return ''
+    if (t.startsWith('http://') || t.startsWith('https://')) return t
+    return `https://${t}`
+  }
+
+  const handleDocumentSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const unitId = formData.unit_id.trim()
+    const catId = formData.document_category_id.trim()
+
+    if (addMode === 'link') {
+      const href = normalizeUrl(formData.external_url)
+      if (!href || !/^https?:\/\//i.test(href)) {
+        alert('Въведете валиден адрес (https://...).')
+        return
+      }
+      if (!formData.name.trim()) {
+        alert('Въведете име на връзката.')
+        return
+      }
+      setUploading(true)
+      try {
+        const payload = {
+          name: formData.name.trim(),
+          external_url: href,
+          file_path: null,
+          file_type: null,
+          description: formData.description || null,
+          document_category_id: catId || null,
+          related_type: unitId ? ('unit' as const) : null,
+          related_id: unitId || null,
+        }
+        const { error: dbError } = await supabase.from('documents').insert(payload)
+        if (dbError) throw dbError
+        setShowModal(false)
+        setAddMode('file')
+        setFormData({
+          name: '',
+          description: '',
+          document_category_id: '',
+          unit_id: '',
+          file: null,
+          external_url: '',
+        })
+        void loadPage()
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Грешка при запис'
+        alert(
+          msg.includes('check') || msg.includes('constraint')
+            ? `${msg}\n\nИзпълни миграцията database_migrations/050_documents_links_expenses_liquidity_users.sql в Supabase.`
+            : msg
+        )
+      } finally {
+        setUploading(false)
+      }
+      return
+    }
+
     if (!formData.file) {
       alert('Моля, изберете файл')
       return
@@ -157,8 +218,6 @@ export default function Documents() {
 
       void supabase.storage.from('documents').getPublicUrl(filePath)
 
-      const unitId = formData.unit_id.trim()
-      const catId = formData.document_category_id.trim()
       const payload = {
         name: formData.name || formData.file.name,
         file_path: filePath,
@@ -167,6 +226,7 @@ export default function Documents() {
         document_category_id: catId || null,
         related_type: unitId ? ('unit' as const) : null,
         related_id: unitId || null,
+        external_url: null,
       }
 
       const { error: dbError } = await supabase.from('documents').insert(payload)
@@ -174,12 +234,14 @@ export default function Documents() {
       if (dbError) throw dbError
 
       setShowModal(false)
+      setAddMode('file')
       setFormData({
         name: '',
         description: '',
         document_category_id: '',
         unit_id: '',
         file: null,
+        external_url: '',
       })
       void loadPage()
     } catch (error: unknown) {
@@ -190,15 +252,16 @@ export default function Documents() {
     }
   }
 
-  const handleDelete = async (id: string, filePath: string) => {
+  const handleDelete = async (doc: DocumentRow) => {
     if (!confirm('Сигурни ли сте, че искате да изтриете този документ?')) return
 
     try {
-      const { error: storageError } = await supabase.storage.from('documents').remove([filePath])
+      if (!doc.external_url && doc.file_path) {
+        const { error: storageError } = await supabase.storage.from('documents').remove([doc.file_path])
+        if (storageError) throw storageError
+      }
 
-      if (storageError) throw storageError
-
-      const { error: dbError } = await supabase.from('documents').delete().eq('id', id)
+      const { error: dbError } = await supabase.from('documents').delete().eq('id', doc.id)
 
       if (dbError) throw dbError
 
@@ -209,36 +272,35 @@ export default function Documents() {
   }
 
   const openNewModal = () => {
+    setAddMode('file')
     setFormData({
       name: '',
       description: '',
       document_category_id: '',
       unit_id: '',
       file: null,
+      external_url: '',
     })
     setShowModal(true)
   }
 
-  const getFileIcon = (fileType: string) => {
+  const getFileIcon = (fileType: string | null) => {
+    if (!fileType) return <Link2 size={22} aria-hidden />
     if (fileType.startsWith('image/')) {
       return <ImageIcon size={24} />
     }
     return <FileText size={24} />
   }
 
-  const isImage = (fileType: string) => {
-    return fileType.startsWith('image/')
-  }
-
-  const relatedLine = (doc: DocumentRow) => {
+  const relatedSummary = (doc: DocumentRow): string => {
     if (doc.related_type === 'unit' && doc.related_id) {
       const label = unitLabels[doc.related_id]
-      return label ? <div className="document-floor">Обект: {label}</div> : null
+      return label ? label : '—'
     }
     if (!doc.related_type && !doc.related_id) {
-      return <div className="document-floor">Общ за блока</div>
+      return 'Общо за блока'
     }
-    return null
+    return '—'
   }
 
   if (loading) {
@@ -250,12 +312,12 @@ export default function Documents() {
       <div className="page-header">
         <div>
           <h1>Документи</h1>
-          <p>Управление на документи и снимки. По избор свържете файла с обект (апартамент) за по-лесно търсене.</p>
+          <p>Таблица с файлове или външни връзки. По избор връзката/файлът се обвързва с обект (апартамент).</p>
         </div>
         {canEdit() && (
           <button type="button" className="btn-primary" onClick={openNewModal}>
             <Plus size={20} />
-            Качи документ
+            Добави документ
           </button>
         )}
       </div>
@@ -280,76 +342,123 @@ export default function Documents() {
         </div>
       )}
 
-      <div className="documents-grid">
+      <div className="documents-table-wrap table-container">
         {documents.length === 0 ? (
-          <div className="empty-state">Няма качени документи</div>
+          <div className="empty-state">Няма документи</div>
         ) : filteredDocuments.length === 0 ? (
           <div className="empty-state">Няма документи за избрания тип</div>
         ) : (
-          filteredDocuments.map((doc) => {
-            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(doc.file_path)
-
-            return (
-              <div key={doc.id} className="document-card">
-                {isImage(doc.file_type) ? (
-                  <div className="document-preview image">
-                    <img src={urlData.publicUrl} alt={doc.name} />
-                  </div>
-                ) : (
-                  <div className="document-preview file">{getFileIcon(doc.file_type)}</div>
-                )}
-                <div className="document-info">
-                  <h3>{doc.name}</h3>
-                  {doc.document_categories?.name && (
-                    <div className="document-category">Тип: {doc.document_categories.name}</div>
-                  )}
-                  {doc.description && <p>{doc.description}</p>}
-                  {relatedLine(doc)}
-                  <div className="document-date">
-                    {format(new Date(doc.created_at), 'dd.MM.yyyy HH:mm', { locale: bg })}
-                  </div>
-                </div>
-                <div className="document-actions">
-                  <a
-                    href={urlData.publicUrl}
-                    className="icon-btn"
-                    title="Отвори"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      void openPublicStorageInNewTab(urlData.publicUrl, doc.name)
-                    }}
-                  >
-                    <Download size={18} />
-                  </a>
-                  {canEdit() && (
-                    <button
-                      type="button"
-                      className="icon-btn danger"
-                      onClick={() => void handleDelete(doc.id, doc.file_path)}
-                      title="Изтрий"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })
+          <table className="data-table documents-data-table">
+            <thead>
+              <tr>
+                <th>Име</th>
+                <th>Тип</th>
+                <th>Вид</th>
+                <th>Обект / обхват</th>
+                <th>Описание</th>
+                <th>Дата</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredDocuments.map((doc) => {
+                const isLink = Boolean(doc.external_url && doc.external_url.trim())
+                const { data: urlData } = doc.file_path
+                  ? supabase.storage.from('documents').getPublicUrl(doc.file_path)
+                  : { data: { publicUrl: '' } }
+                return (
+                  <tr key={doc.id}>
+                    <td>
+                      <div className="document-table-name">
+                        {isLink ? <Link2 size={16} className="doc-kind-icon" aria-hidden /> : getFileIcon(doc.file_type)}
+                        <span>{doc.name}</span>
+                      </div>
+                    </td>
+                    <td>{doc.document_categories?.name ?? '—'}</td>
+                    <td>{isLink ? 'Връзка' : 'Файл'}</td>
+                    <td>{relatedSummary(doc)}</td>
+                    <td className="document-table-desc">{doc.description?.trim() || '—'}</td>
+                    <td>{format(new Date(doc.created_at), 'dd.MM.yyyy HH:mm', { locale: bg })}</td>
+                    <td>
+                      <div className="table-actions">
+                        {isLink && doc.external_url ? (
+                          <a
+                            href={doc.external_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="icon-btn"
+                            title="Отвори връзката"
+                          >
+                            <ExternalLink size={18} />
+                          </a>
+                        ) : doc.file_path ? (
+                          <a
+                            href={urlData.publicUrl}
+                            className="icon-btn"
+                            title="Свали / отвори"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              void openPublicStorageInNewTab(urlData.publicUrl, doc.name)
+                            }}
+                          >
+                            <Download size={18} />
+                          </a>
+                        ) : null}
+                        {canEdit() && (
+                          <button
+                            type="button"
+                            className="icon-btn danger"
+                            onClick={() => void handleDelete(doc)}
+                            title="Изтрий"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
       </div>
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>Качи документ</h2>
-            <form onSubmit={(e) => void handleFileUpload(e)}>
+            <h2>Добави документ</h2>
+            <form onSubmit={(e) => void handleDocumentSubmit(e)}>
               <div className="form-group">
-                <label>Име на документ</label>
+                <label>Начин</label>
+                <div className="document-mode-row">
+                  <label className="document-mode-label">
+                    <input
+                      type="radio"
+                      name="addMode"
+                      checked={addMode === 'file'}
+                      onChange={() => setAddMode('file')}
+                    />
+                    Качи файл
+                  </label>
+                  <label className="document-mode-label">
+                    <input
+                      type="radio"
+                      name="addMode"
+                      checked={addMode === 'link'}
+                      onChange={() => setAddMode('link')}
+                    />
+                    Външна връзка
+                  </label>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Име {addMode === 'link' ? '*' : ''}</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Оставете празно за използване на името на файла"
+                  placeholder={addMode === 'file' ? 'Празно = име на файла' : 'Заглавие на връзката'}
                 />
               </div>
               <div className="form-group">
@@ -388,31 +497,45 @@ export default function Documents() {
                   ))}
                 </select>
               </div>
-              <div className="form-group">
-                <label>Файл (снимка или PDF)</label>
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      file: e.target.files?.[0] || null,
-                    })
-                  }
-                  required
-                />
-                {formData.file && (
-                  <div className="file-info">
-                    Избран файл: {formData.file.name} ({(formData.file.size / 1024 / 1024).toFixed(2)} MB)
-                  </div>
-                )}
-              </div>
+              {addMode === 'link' ? (
+                <div className="form-group">
+                  <label>URL *</label>
+                  <input
+                    type="url"
+                    value={formData.external_url}
+                    onChange={(e) => setFormData({ ...formData, external_url: e.target.value })}
+                    placeholder="https://…"
+                    autoComplete="url"
+                    required
+                  />
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label>Файл (снимка или PDF) *</label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        file: e.target.files?.[0] || null,
+                      })
+                    }
+                    required
+                  />
+                  {formData.file && (
+                    <div className="file-info">
+                      Избран: {formData.file.name} ({(formData.file.size / 1024 / 1024).toFixed(2)} MB)
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
                   Отказ
                 </button>
                 <button type="submit" className="btn-primary" disabled={uploading}>
-                  {uploading ? 'Качване...' : 'Качи'}
+                  {uploading ? 'Запис…' : 'Запази'}
                 </button>
               </div>
             </form>

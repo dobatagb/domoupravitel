@@ -191,6 +191,45 @@
   border-radius: 0.75rem;
 }
 
+.documents-table-wrap {
+  margin-top: 0.5rem;
+}
+
+.documents-data-table .document-table-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.documents-data-table .doc-kind-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+  opacity: 0.9;
+}
+
+.documents-data-table .document-table-desc {
+  max-width: 16rem;
+  font-size: 0.8125rem;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.document-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.document-mode-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  user-select: none;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -212,9 +251,8 @@
     padding: 0.875rem 1rem;
   }
 
-  .documents-grid {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
+  .documents-data-table {
+    font-size: 0.8125rem;
   }
 }
 

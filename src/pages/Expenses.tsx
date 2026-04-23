@@ -17,6 +17,8 @@ interface Expense {
   created_at: string
   document_path?: string | null
   document_name?: string | null
+  /** cash = каса, bank_transfer = сметка (след миграция 050) */
+  paid_from?: 'cash' | 'bank_transfer' | null
 }
 
 const categories = [
@@ -25,6 +27,7 @@ const categories = [
   'Почистване',
   'Осигуровки',
   'Управление',
+  'Вътрешно прехвърляне',
   'Други',
 ]
 
@@ -64,6 +67,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
     description: '',
     date: new Date().toISOString().split('T')[0],
     category: '',
+    paid_from: 'cash' as 'cash' | 'bank_transfer',
   })
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null)
   const [removeAttachment, setRemoveAttachment] = useState(false)
@@ -100,10 +104,11 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
 
       const expenseData = {
         amount: parseFloat(formData.amount),
-        description: formData.description,
+        description: formData.description.trim(),
         date: formData.date,
         category: formData.category,
         distribution_method: EXPENSE_DISTRIBUTION_LEGACY,
+        paid_from: formData.paid_from,
       }
 
       if (editingExpense) {
@@ -180,6 +185,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
       description: '',
       date: new Date().toISOString().split('T')[0],
       category: '',
+      paid_from: 'cash',
     })
     setPendingAttachment(null)
     setRemoveAttachment(false)
@@ -194,6 +200,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
       description: expense.description,
       date: expense.date.split('T')[0],
       category: expense.category,
+      paid_from: expense.paid_from === 'bank_transfer' ? 'bank_transfer' : 'cash',
     })
     setShowModal(true)
   }
@@ -234,9 +241,9 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
 
   const headerIntro = (
     <>
-      Всяка сума е <strong>платена от общата каса</strong> (събраните плащания от собствениците). Тя се приспада от
-      наличността на „Начало“ — без разпределение по апартаменти. Може да прикачите <strong>фактура или документ</strong>{' '}
-      (PDF, снимка); собствениците виждат списъка и файла.
+      При запис избирате дали разходът е от <strong>каса (в брой)</strong> или от <strong>банкова сметка</strong> — сумата се
+      намалява от съответната наличност в «Финанси» (след миграция 050). Може да прикачите <strong>фактура или документ</strong>{' '}
+      (PDF, снимка).
     </>
   )
 
@@ -296,6 +303,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
               <th>Дата</th>
               <th>Описание</th>
               <th>Категория</th>
+              <th>От</th>
               <th>Документ</th>
               <th>Сума</th>
               {canEdit() && <th>Действия</th>}
@@ -304,7 +312,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
           <tbody>
             {expenses.length === 0 ? (
               <tr>
-                <td colSpan={canEdit() ? 6 : 5} className="empty-cell">
+                <td colSpan={canEdit() ? 7 : 6} className="empty-cell">
                   Няма регистрирани разходи
                 </td>
               </tr>
@@ -312,9 +320,14 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
               expenses.map((expense) => (
                 <tr key={expense.id}>
                   <td>{format(new Date(expense.date), 'dd.MM.yyyy', { locale: bg })}</td>
-                  <td>{expense.description}</td>
+                  <td className={!expense.description?.trim() ? 'expense-desc-empty' : undefined}>
+                    {expense.description?.trim() || '—'}
+                  </td>
                   <td>
                     <span className="category-badge">{expense.category}</span>
+                  </td>
+                  <td>
+                    {expense.paid_from === 'bank_transfer' ? 'Сметка' : 'Каса'}
                   </td>
                   <td>
                     {expense.document_path ? (
@@ -379,12 +392,12 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
                 />
               </div>
               <div className="form-group">
-                <label>Описание *</label>
+                <label>Описание</label>
                 <input
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  required
+                  placeholder="По желание"
                 />
               </div>
               <div className="form-group">
@@ -405,6 +418,20 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
               <div className="form-group">
                 <label>Дата *</label>
                 <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="expense-paid-from">Платено от *</label>
+                <select
+                  id="expense-paid-from"
+                  value={formData.paid_from}
+                  onChange={(e) =>
+                    setFormData({ ...formData, paid_from: e.target.value as 'cash' | 'bank_transfer' })
+                  }
+                  required
+                >
+                  <option value="cash">Каса (в брой)</option>
+                  <option value="bank_transfer">Банкова сметка</option>
+                </select>
               </div>
 
               <div className="form-group expense-attachment-group">

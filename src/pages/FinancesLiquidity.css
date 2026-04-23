@@ -74,6 +74,15 @@
   font-size: 0.9rem;
 }
 
+.fin-liq-field select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  background: var(--surface);
+}
+
 .fin-liq-form {
   max-width: 32rem;
   padding: 1.25rem;

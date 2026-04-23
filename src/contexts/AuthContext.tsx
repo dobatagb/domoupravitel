@@ -47,6 +47,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userRef.current = user
   }, [user])
 
+  /** Периодично обновяване на last_active_at (RPC: RLS не дава надежден UPDATE от клиент). */
+  useEffect(() => {
+    if (!user?.id) return
+    const ping = () => {
+      void supabase.rpc('touch_user_last_active').then(({ error }) => {
+        if (error) {
+          console.warn('[Auth] touch_user_last_active:', error.message, '— миграция 053?')
+        }
+      })
+    }
+    ping()
+    const t = window.setInterval(ping, 3 * 60 * 1000)
+    return () => window.clearInterval(t)
+  }, [user?.id])
+
   useEffect(() => {
     let isActive = true
 

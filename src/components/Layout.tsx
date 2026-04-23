@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext'
 import {
   Home,
   Building2,
-  TrendingDown,
   FileText,
   LogOut,
   CreditCard,
@@ -109,7 +108,6 @@ export default function Layout() {
         { path: '/units', label: 'Мои обекти', icon: Building2 },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
-        { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/finances', label: 'Финанси', icon: Wallet },
         { path: '/movements', label: 'Движения', icon: History },
         { path: '/documents', label: 'Документи', icon: FileText },
@@ -122,7 +120,6 @@ export default function Layout() {
         { path: '/users', label: 'Потребители', icon: Users },
         { path: '/obligations', label: 'Задължения', icon: CreditCard },
         { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
-        { path: '/expenses', label: 'Разходи', icon: TrendingDown },
         { path: '/finances', label: 'Финанси', icon: Wallet },
         { path: '/movements', label: 'Движения', icon: History },
         { path: '/documents', label: 'Документи', icon: FileText },

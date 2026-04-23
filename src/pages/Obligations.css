@@ -345,6 +345,54 @@
   color: var(--text);
 }
 
+/* Скрол в средата, бутони «Отказ»/«Запази» винаги видими в дъното */
+.obligations-page .modal-content {
+  max-height: min(90dvh, 640px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.obligations-page .modal-content > h2 {
+  flex-shrink: 0;
+  padding: 1.25rem 1.5rem 0.5rem;
+  margin-bottom: 0;
+}
+
+.obligations-page .modal-content .obligations-modal-hint {
+  flex-shrink: 0;
+  margin: 0 1.5rem 0.75rem;
+}
+
+.obligations-page .obligations-modal-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.obligations-page .modal-content .modal-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 1.5rem 0.25rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.obligations-page .modal-content .modal-body .form-group:last-of-type {
+  margin-bottom: 0.75rem;
+}
+
+.obligations-page .modal-content .modal-actions {
+  margin-top: 0;
+  padding: 0.9rem 1.5rem 1.1rem;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+}
+
 .form-group {
   margin-bottom: 1.25rem;
 }

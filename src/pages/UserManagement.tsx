@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Users, Plus, Link2, Trash2 } from 'lucide-react'
+import { Users, Plus, Link2, Trash2, KeyRound } from 'lucide-react'
+import { format } from 'date-fns'
+import bg from 'date-fns/locale/bg'
 import type { UserRole } from '../lib/supabase'
 import './Units.css'
 import './UserManagement.css'
@@ -11,6 +13,7 @@ type AppUser = {
   id: string
   email: string
   role: string
+  last_active_at: string | null
 }
 
 type UnitRow = {
@@ -32,6 +35,8 @@ function unitLabel(u: UnitRow): string {
   return g ? `${g} ${n}` : n
 }
 
+const MIN_PASSWORD_LEN = 6
+
 export default function UserManagement() {
   const {
     canEdit,
@@ -51,10 +56,15 @@ export default function UserManagement() {
   const [assignSelected, setAssignSelected] = useState<Set<string>>(new Set())
   const [savingLinks, setSavingLinks] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [passwordModalUser, setPasswordModalUser] = useState<AppUser | null>(null)
+  const [adminNewPassword, setAdminNewPassword] = useState('')
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
+  const [adminPasswordError, setAdminPasswordError] = useState<string | null>(null)
+  const [savingPassword, setSavingPassword] = useState(false)
 
   const load = useCallback(async () => {
     const [uRes, unitRes, linkRes] = await Promise.all([
-      supabase.from('users').select('id, email, role').order('email'),
+      supabase.from('users').select('id, email, role, last_active_at').order('email'),
       supabase.from('units').select('id, type, number, group:group_id(name)').order('type').order('number'),
       supabase.from('user_unit_links').select('id, user_id, unit_id'),
     ])
@@ -178,6 +188,60 @@ export default function UserManagement() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Грешка'
       alert(msg.includes('policy') ? 'Само администратор може да променя роли.' : msg)
+    }
+  }
+
+  const openPasswordModal = (u: AppUser) => {
+    if (userRole !== 'admin') {
+      alert('Само администратор може да задава парола.')
+      return
+    }
+    setAdminNewPassword('')
+    setAdminConfirmPassword('')
+    setAdminPasswordError(null)
+    setPasswordModalUser(u)
+  }
+
+  const closePasswordModal = () => {
+    if (savingPassword) return
+    setPasswordModalUser(null)
+    setAdminNewPassword('')
+    setAdminConfirmPassword('')
+    setAdminPasswordError(null)
+  }
+
+  const handleSaveUserPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!passwordModalUser || userRole !== 'admin') return
+    setAdminPasswordError(null)
+    if (adminNewPassword.length < MIN_PASSWORD_LEN) {
+      setAdminPasswordError(`Паролата трябва да е поне ${MIN_PASSWORD_LEN} символа.`)
+      return
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      setAdminPasswordError('Паролите не съвпадат.')
+      return
+    }
+    setSavingPassword(true)
+    try {
+      const { error } = await supabase.rpc('admin_set_user_password', {
+        p_target_user_id: passwordModalUser.id,
+        p_new_password: adminNewPassword,
+      })
+      if (error) throw error
+      setPasswordModalUser(null)
+      setAdminNewPassword('')
+      setAdminConfirmPassword('')
+      alert('Паролата е обновена.')
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Грешка'
+      setAdminPasswordError(
+        msg.includes('admin_set_user_password') || msg.includes('function')
+          ? `${msg}\n\nИзпълни миграцията database_migrations/052_admin_set_user_password.sql в Supabase.`
+          : msg
+      )
+    } finally {
+      setSavingPassword(false)
     }
   }
 
@@ -324,6 +388,7 @@ export default function UserManagement() {
               <th>Имейл</th>
               <th>Роля</th>
               <th>Обекти</th>
+              <th>Активност</th>
               <th>Действия</th>
             </tr>
           </thead>
@@ -347,12 +412,29 @@ export default function UserManagement() {
                   )}
                 </td>
                 <td className="user-mgmt-units-cell">{unitsSummary(u.id)}</td>
+                <td className="user-mgmt-activity">
+                  {u.last_active_at
+                    ? format(new Date(u.last_active_at), 'dd.MM.yyyy HH:mm', { locale: bg })
+                    : '—'}
+                </td>
                 <td>
                   <div className="user-mgmt-row-actions">
                     <button type="button" className="btn-secondary btn-small" onClick={() => openAssign(u)}>
                       <Link2 size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
                       Обекти
                     </button>
+                    {userRole === 'admin' && (
+                      <button
+                        type="button"
+                        className="btn-secondary btn-small"
+                        title="Задай нова парола (без изпращане на имейл)"
+                        disabled={savingPassword}
+                        onClick={() => openPasswordModal(u)}
+                      >
+                        <KeyRound size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                        Парола
+                      </button>
+                    )}
                     {userRole === 'admin' && (
                       <button
                         type="button"
@@ -372,6 +454,52 @@ export default function UserManagement() {
           </tbody>
         </table>
       </div>
+
+      {passwordModalUser && (
+        <div className="modal-overlay" onClick={() => closePasswordModal()}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h2>Нова парола</h2>
+            <p className="form-hint" style={{ marginTop: 0 }}>
+              За <strong>{passwordModalUser.email}</strong>. Ще може да влезе с въведената тук парола.
+            </p>
+            <form onSubmit={handleSaveUserPassword}>
+              <div className="form-group">
+                <label htmlFor="um-admin-pw1">Нова парола *</label>
+                <input
+                  id="um-admin-pw1"
+                  type="password"
+                  autoComplete="new-password"
+                  value={adminNewPassword}
+                  onChange={(e) => setAdminNewPassword(e.target.value)}
+                  disabled={savingPassword}
+                  minLength={MIN_PASSWORD_LEN}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="um-admin-pw2">Потвърди паролата *</label>
+                <input
+                  id="um-admin-pw2"
+                  type="password"
+                  autoComplete="new-password"
+                  value={adminConfirmPassword}
+                  onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                  disabled={savingPassword}
+                  minLength={MIN_PASSWORD_LEN}
+                />
+              </div>
+              {adminPasswordError && <p className="form-hint" style={{ color: 'var(--danger)', marginTop: 0 }}>{adminPasswordError}</p>}
+              <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
+                <button type="button" className="btn-secondary" disabled={savingPassword} onClick={closePasswordModal}>
+                  Отказ
+                </button>
+                <button type="submit" className="btn-primary" disabled={savingPassword}>
+                  {savingPassword ? 'Запис…' : 'Запази'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {assignUser && (
         <div className="modal-overlay" onClick={() => !savingLinks && setAssignUser(null)}>

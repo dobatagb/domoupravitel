@@ -142,7 +142,7 @@ export default function Obligations() {
     amount: '',
     payment_date: new Date().toISOString().split('T')[0],
     notes: '',
-    payment_method: '' as '' | 'cash' | 'bank_transfer' | 'card' | 'other',
+    payment_method: 'cash' as 'cash' | 'bank_transfer' | 'card' | 'other',
   })
 
   const [obligationLines, setObligationLines] = useState<ObligationLine[]>([])
@@ -309,7 +309,7 @@ export default function Obligations() {
       amount: '',
       payment_date: new Date().toISOString().split('T')[0],
       notes: '',
-      payment_method: '',
+      payment_method: 'cash',
     })
     setMaxPayForUnit(null)
     setShowAddModal(true)
@@ -1009,42 +1009,44 @@ export default function Obligations() {
         <div className="modal-overlay" onClick={() => setShowCarriedDebtModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Пренесен дълг (старо задължение)</h2>
-            <p className="form-hint" style={{ marginTop: 0 }}>
+            <p className="form-hint obligations-modal-hint">
               Задава се сумата, която обектът дължи извън текущото таксуване по периоди. В базата се създава или обновява ред
               „Пренесен дълг“ и влиза в неплатеното и в плащанията. Вече приспаднатото от плащания се запазва при промяна на
               общата сума.
             </p>
-            <form onSubmit={handleSaveCarriedDebt}>
-              <div className="form-group">
-                <label htmlFor="carried-unit">Обект *</label>
-                <select
-                  id="carried-unit"
-                  value={carriedDebtForm.unit_id}
-                  onChange={(e) => setCarriedDebtForm((f) => ({ ...f, unit_id: e.target.value }))}
-                  required
-                >
-                  <option value="">— Избери обект —</option>
-                  {sortUnitsByTypeAndNumber(units).map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unitOptionLabel(
-                        { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
-                        labelForCode
-                      )}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="carried-amt">Пренесен дълг (€) *</label>
-                <input
-                  id="carried-amt"
-                  type="text"
-                  inputMode="decimal"
-                  value={carriedDebtForm.amount}
-                  onChange={(e) => setCarriedDebtForm((f) => ({ ...f, amount: e.target.value }))}
-                  placeholder="0.00"
-                  required
-                />
+            <form className="obligations-modal-form" onSubmit={handleSaveCarriedDebt}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label htmlFor="carried-unit">Обект *</label>
+                  <select
+                    id="carried-unit"
+                    value={carriedDebtForm.unit_id}
+                    onChange={(e) => setCarriedDebtForm((f) => ({ ...f, unit_id: e.target.value }))}
+                    required
+                  >
+                    <option value="">— Избери обект —</option>
+                    {sortUnitsByTypeAndNumber(units).map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unitOptionLabel(
+                          { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
+                          labelForCode
+                        )}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="carried-amt">Пренесен дълг (€) *</label>
+                  <input
+                    id="carried-amt"
+                    type="text"
+                    inputMode="decimal"
+                    value={carriedDebtForm.amount}
+                    onChange={(e) => setCarriedDebtForm((f) => ({ ...f, amount: e.target.value }))}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowCarriedDebtModal(false)}>
@@ -1063,7 +1065,7 @@ export default function Obligations() {
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Ново плащане</h2>
-            <p className="form-hint" style={{ marginTop: 0 }}>
+            <p className="form-hint obligations-modal-hint">
               Сумата се приспада автоматично по ред на задълженията (извънредни първи). Не може да надвиши неплатеното по
               обекта.
               {maxPayForUnit != null && addForm.unit_id && (
@@ -1073,76 +1075,77 @@ export default function Obligations() {
                 </>
               )}
             </p>
-            <form onSubmit={handleCreatePayment}>
-              <div className="form-group">
-                <label htmlFor="add-unit">Обект *</label>
-                <select
-                  id="add-unit"
-                  value={addForm.unit_id}
-                  onChange={(e) => setAddForm({ ...addForm, unit_id: e.target.value })}
-                  required
-                >
-                  <option value="">— Избери обект —</option>
-                  {sortUnitsByTypeAndNumber(units).map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unitOptionLabel(
-                        { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
-                        labelForCode
-                      )}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="add-amount">Сума (€) *</label>
-                <input
-                  id="add-amount"
-                  type="text"
-                  inputMode="decimal"
-                  value={addForm.amount}
-                  onChange={(e) => setAddForm({ ...addForm, amount: e.target.value })}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="add-payment-date">Дата на плащане *</label>
-                <input
-                  id="add-payment-date"
-                  type="date"
-                  value={addForm.payment_date}
-                  onChange={(e) => setAddForm({ ...addForm, payment_date: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="add-method">Начин на плащане</label>
-                <select
-                  id="add-method"
-                  value={addForm.payment_method}
-                  onChange={(e) =>
-                    setAddForm({
-                      ...addForm,
-                      payment_method: e.target.value as typeof addForm.payment_method,
-                    })
-                  }
-                >
-                  <option value="">— не е посочен —</option>
-                  <option value="cash">В брой</option>
-                  <option value="bank_transfer">Банков превод</option>
-                  <option value="card">Карта</option>
-                  <option value="other">Друго</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="add-notes">Бележки / пояснение</label>
-                <textarea
-                  id="add-notes"
-                  value={addForm.notes}
-                  onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
-                  rows={2}
-                  placeholder="По желание"
-                />
+            <form className="obligations-modal-form" onSubmit={handleCreatePayment}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label htmlFor="add-unit">Обект *</label>
+                  <select
+                    id="add-unit"
+                    value={addForm.unit_id}
+                    onChange={(e) => setAddForm({ ...addForm, unit_id: e.target.value })}
+                    required
+                  >
+                    <option value="">— Избери обект —</option>
+                    {sortUnitsByTypeAndNumber(units).map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unitOptionLabel(
+                          { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
+                          labelForCode
+                        )}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="add-amount">Сума (€) *</label>
+                  <input
+                    id="add-amount"
+                    type="text"
+                    inputMode="decimal"
+                    value={addForm.amount}
+                    onChange={(e) => setAddForm({ ...addForm, amount: e.target.value })}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="add-payment-date">Дата на плащане *</label>
+                  <input
+                    id="add-payment-date"
+                    type="date"
+                    value={addForm.payment_date}
+                    onChange={(e) => setAddForm({ ...addForm, payment_date: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="add-method">Начин на плащане</label>
+                  <select
+                    id="add-method"
+                    value={addForm.payment_method}
+                    onChange={(e) =>
+                      setAddForm({
+                        ...addForm,
+                        payment_method: e.target.value as typeof addForm.payment_method,
+                      })
+                    }
+                  >
+                    <option value="cash">В брой</option>
+                    <option value="bank_transfer">Банков превод</option>
+                    <option value="card">Карта</option>
+                    <option value="other">Друго</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="add-notes">Бележки / пояснение</label>
+                  <textarea
+                    id="add-notes"
+                    value={addForm.notes}
+                    onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
+                    rows={2}
+                    placeholder="По желание"
+                  />
+                </div>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowAddModal(false)}>
@@ -1161,60 +1164,60 @@ export default function Obligations() {
         <div className="modal-overlay" onClick={() => setShowObligationModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Редактирай задължение</h2>
-            <p className="form-hint" style={{ marginTop: 0 }}>
+            <p className="form-hint obligations-modal-hint">
               {editingObligation.kind === 'regular' && editingObligation.billing_period_id && (
                 <>
-                  Редовно задължение към период — при запис на суми в „Периоди“ редът може да се синхронизира отново.
-                  <br />
+                  Редовно задължение към период — при запис на суми в „Периоди“ редът може да се синхронизира отново.{' '}
                 </>
               )}
               {obligationPaidSum > 0.005 && (
                 <>
-                  Приспаднато от плащания: <strong>{obligationPaidSum.toFixed(2)} €</strong> — остатъкът се изчислява
-                  автоматично от оригинал минус тази сума.
+                  Приспаднато от плащания: <strong>{obligationPaidSum.toFixed(2)} €</strong> — остатъкът от оригинал.
                 </>
               )}
             </p>
-            <form onSubmit={saveObligationLine}>
-              <div className="form-group">
-                <label htmlFor="obl-title">Заглавие *</label>
-                <input
-                  id="obl-title"
-                  value={obligationForm.title}
-                  onChange={(e) => setObligationForm((f) => ({ ...f, title: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="obl-ao">Оригинална сума (€) *</label>
-                <input
-                  id="obl-ao"
-                  type="text"
-                  inputMode="decimal"
-                  value={obligationForm.amount_original}
-                  onChange={(e) => setObligationForm((f) => ({ ...f, amount_original: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="obl-ar">Остатък (€) {obligationPaidSum > 0.005 ? '(автоматично)' : '*'}</label>
-                <input
-                  id="obl-ar"
-                  type="text"
-                  inputMode="decimal"
-                  value={
-                    obligationPaidSum > 0.005
-                      ? (() => {
-                          const ao = parseMoney(obligationForm.amount_original)
-                          if (Number.isNaN(ao)) return ''
-                          return Math.max(0, Math.round((ao - obligationPaidSum) * 100) / 100).toFixed(2)
-                        })()
-                      : obligationForm.amount_remaining
-                  }
-                  onChange={(e) => setObligationForm((f) => ({ ...f, amount_remaining: e.target.value }))}
-                  disabled={obligationPaidSum > 0.005}
-                  required={obligationPaidSum <= 0.005}
-                />
+            <form className="obligations-modal-form" onSubmit={saveObligationLine}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label htmlFor="obl-title">Заглавие *</label>
+                  <input
+                    id="obl-title"
+                    value={obligationForm.title}
+                    onChange={(e) => setObligationForm((f) => ({ ...f, title: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="obl-ao">Оригинална сума (€) *</label>
+                  <input
+                    id="obl-ao"
+                    type="text"
+                    inputMode="decimal"
+                    value={obligationForm.amount_original}
+                    onChange={(e) => setObligationForm((f) => ({ ...f, amount_original: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="obl-ar">Остатък (€) {obligationPaidSum > 0.005 ? '(автоматично)' : '*'}</label>
+                  <input
+                    id="obl-ar"
+                    type="text"
+                    inputMode="decimal"
+                    value={
+                      obligationPaidSum > 0.005
+                        ? (() => {
+                            const ao = parseMoney(obligationForm.amount_original)
+                            if (Number.isNaN(ao)) return ''
+                            return Math.max(0, Math.round((ao - obligationPaidSum) * 100) / 100).toFixed(2)
+                          })()
+                        : obligationForm.amount_remaining
+                    }
+                    onChange={(e) => setObligationForm((f) => ({ ...f, amount_remaining: e.target.value }))}
+                    disabled={obligationPaidSum > 0.005}
+                    required={obligationPaidSum <= 0.005}
+                  />
+                </div>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowObligationModal(false)}>
@@ -1234,36 +1237,39 @@ export default function Obligations() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Редактирай плащане</h2>
             <form
+              className="obligations-modal-form"
               onSubmit={(e) => {
                 e.preventDefault()
                 void handleUpdatePayment()
               }}
             >
-              <div className="form-group">
-                <label>Сума (€) *</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Дата на плащане</label>
-                <input
-                  type="date"
-                  value={formData.payment_date}
-                  onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label>Бележки</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  rows={3}
-                />
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>Сума (€) *</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Дата на плащане</label>
+                  <input
+                    type="date"
+                    value={formData.payment_date}
+                    onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Бележки</label>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>

@@ -30,6 +30,10 @@
   box-shadow: var(--shadow);
 }
 
+.data-table td.expense-desc-empty {
+  color: var(--text-light);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
