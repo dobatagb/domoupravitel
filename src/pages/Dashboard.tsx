@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { TrendingUp, TrendingDown, CreditCard, Wallet, Landmark } from 'lucide-react'
+import { TrendingUp, TrendingDown, CreditCard, Wallet, Landmark, History } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
@@ -10,14 +11,6 @@ import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeS
 import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 import { useUnitGroups } from '../hooks/useUnitGroups'
 import { paymentDescriptionWithMethod } from '../lib/paymentDescription'
-
-type ViewerBuildingRow = {
-  unitId: string
-  label: string
-  floor: string
-  due: number
-  paid: number
-}
 
 type ViewerPaymentRow = {
   id: string
@@ -48,7 +41,6 @@ export default function Dashboard() {
   })
   const [liquidBalances, setLiquidBalances] = useState({ cash: 0, bank: 0 })
 
-  const [viewerBuildingRows, setViewerBuildingRows] = useState<ViewerBuildingRow[]>([])
   const [viewerMyDue, setViewerMyDue] = useState(0)
   const [viewerMyPayments, setViewerMyPayments] = useState<ViewerPaymentRow[]>([])
   const [viewerSnapshotLoading, setViewerSnapshotLoading] = useState(false)
@@ -67,7 +59,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!isViewer || !user?.id) {
-      setViewerBuildingRows([])
       setViewerMyDue(0)
       setViewerMyPayments([])
       setViewerHasLinkedUnits(false)
@@ -189,13 +180,7 @@ export default function Dashboard() {
       const linkedIds = new Set((links || []).map((r: { unit_id: string }) => r.unit_id))
       setViewerHasLinkedUnits(linkedIds.size > 0)
 
-      const [{ data: units }, dueByUnit, { data: pays }] = await Promise.all([
-        supabase
-          .from('units')
-          .select('id, number, floor, type, group:group_id (name)')
-          .eq('archived', false)
-          .order('type', { ascending: true })
-          .order('number', { ascending: true }),
+      const [dueByUnit, { data: pays }] = await Promise.all([
         loadDueByUnitMap(),
         supabase
           .from('payments')
@@ -207,43 +192,34 @@ export default function Dashboard() {
           .eq('status', 'paid'),
       ])
 
-      const paidByUnit: Record<string, number> = {}
-      for (const r of pays || []) {
-        const row = r as { unit_id: string; amount: number | string }
-        const v = typeof row.amount === 'string' ? parseFloat(row.amount) : Number(row.amount)
-        if (!Number.isFinite(v)) continue
-        paidByUnit[row.unit_id] = (paidByUnit[row.unit_id] ?? 0) + v
-      }
-
-      const labelById: Record<string, string> = {}
-      type UnitRow = {
-        id: string
-        number: string | number
-        floor?: string | null
-        type: string
-        group: { name?: string } | null
-      }
-      const unitList = sortUnitsByTypeAndNumber((units as UnitRow[] | null | undefined) ?? [])
-      const rows: ViewerBuildingRow[] = unitList.map((u) => {
-        const ug = u.group?.name ?? labelForCode(u.type)
-        const n = formatUnitNumberDisplay(u.number)
-        const label = [ug, n].filter(Boolean).join(' ')
-        labelById[u.id] = label
-        return {
-          unitId: u.id,
-          label,
-          floor: (u.floor ?? '').trim(),
-          due: dueByUnit[u.id] ?? 0,
-          paid: paidByUnit[u.id] ?? 0,
-        }
-      })
-      setViewerBuildingRows(rows)
-
       let myDue = 0
       for (const uid of linkedIds) {
         myDue += dueByUnit[uid] ?? 0
       }
       setViewerMyDue(myDue)
+
+      const linkedIdList = [...linkedIds]
+      const labelById: Record<string, string> = {}
+      if (linkedIdList.length > 0) {
+        const { data: linkUnits } = await supabase
+          .from('units')
+          .select('id, number, floor, type, group:group_id (name)')
+          .in('id', linkedIdList)
+          .eq('archived', false)
+        type UnitRow = {
+          id: string
+          number: string | number
+          floor?: string | null
+          type: string
+          group: { name?: string } | null
+        }
+        const unitList = sortUnitsByTypeAndNumber((linkUnits as UnitRow[] | null | undefined) ?? [])
+        for (const u of unitList) {
+          const ug = u.group?.name ?? labelForCode(u.type)
+          const n = formatUnitNumberDisplay(u.number)
+          labelById[u.id] = [ug, n].filter(Boolean).join(' ')
+        }
+      }
 
       type PayRow = {
         id: string
@@ -563,38 +539,16 @@ export default function Dashboard() {
           </div>
 
           <div className="dashboard-viewer-panel">
-            <h2>Справка по обекти (цялата сграда)</h2>
+            <h2>
+              <History size={20} className="dashboard-inline-icon" aria-hidden />
+              Плащания и движения
+            </h2>
             <p className="dashboard-viewer-muted" style={{ marginTop: 0 }}>
-              Показват се номер, етаж и суми по задължения — без лични данни за собственици.
+              Пълен хронологичен списък на плащания и разходи по сградата (с филтри) — в «Движения».
             </p>
-            {viewerSnapshotLoading ? (
-              <p className="dashboard-viewer-muted">Зареждане…</p>
-            ) : viewerBuildingRows.length === 0 ? (
-              <p className="dashboard-viewer-muted">Няма обекти.</p>
-            ) : (
-              <div className="dashboard-table-wrap">
-                <table className="dashboard-table">
-                  <thead>
-                    <tr>
-                      <th>Обект</th>
-                      <th>Етаж</th>
-                      <th className="num">Дължи (€)</th>
-                      <th className="num">Платено (€)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewerBuildingRows.map((r) => (
-                      <tr key={r.unitId}>
-                        <td>{r.label}</td>
-                        <td>{r.floor || '—'}</td>
-                        <td className="num">{r.due.toFixed(2)}</td>
-                        <td className="num">{r.paid.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <Link to="/movements" className="btn-secondary dashboard-viewer-movements-link">
+              Към Движения
+            </Link>
           </div>
         </>
       )}

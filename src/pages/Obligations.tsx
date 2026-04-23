@@ -93,7 +93,8 @@ const SUMMARY_NO_PERIOD = '__no_period__'
 const SUMMARY_PERIOD_COL_MIN = 0.005
 
 export default function Obligations() {
-  const { canEdit } = useAuth()
+  const { canEdit, user, userRole } = useAuth()
+  const isViewer = userRole === 'viewer'
   const { labelForCode } = useUnitGroups()
   const [searchParams] = useSearchParams()
   const [payments, setPayments] = useState<Payment[]>([])
@@ -137,6 +138,8 @@ export default function Obligations() {
     amount_original: '',
     amount_remaining: '',
   })
+  /** За viewer: unit_id от user_unit_links — за „Вашите задължения — остатък“. */
+  const [viewerLinkedUnitIds, setViewerLinkedUnitIds] = useState<Set<string>>(new Set())
 
   const fetchDueByUnitFromDb = async () => {
     try {
@@ -248,6 +251,29 @@ export default function Obligations() {
     fetchUnits()
     void fetchDueByUnitFromDb()
   }, [])
+
+  // Линкнати обекти: ползваме userRole, не isViewer, защото userRole първо е null — isViewer кратко е false и нулеше Set-а;
+  // при кратък null около refresh на ролята също падахме на 0 € след коректен остатък.
+  useEffect(() => {
+    if (userRole === 'admin' || userRole === 'editor') {
+      setViewerLinkedUnitIds(new Set())
+      return
+    }
+    if (userRole !== 'viewer' || !user?.id) {
+      return
+    }
+    void (async () => {
+      const { data, error } = await supabase
+        .from('user_unit_links')
+        .select('unit_id')
+        .eq('user_id', user.id)
+      if (error) {
+        console.warn('Obligations: user_unit_links', error)
+        return
+      }
+      setViewerLinkedUnitIds(new Set((data || []).map((r: { unit_id: string }) => r.unit_id)))
+    })()
+  }, [userRole, user?.id])
 
   useEffect(() => {
     void fetchOblAggByUnit()
@@ -688,7 +714,6 @@ export default function Obligations() {
 
   const stats = {
     total: filteredPayments.reduce((sum, p) => sum + p.amount, 0),
-    count: filteredPayments.length,
   }
 
   const { unitSummaryRows, periodOwedColumns, remByUnitByPeriod } = useMemo(() => {
@@ -776,6 +801,15 @@ export default function Obligations() {
     return { unitSummaryRows, periodOwedColumns, remByUnitByPeriod: remBy }
   }, [filterUnit, units, oblAggByUnit, dueByUnit, paidByUnit, obligationLines, labelForCode])
 
+  /** Същият остатък като в таблицата «Обобщение по обекти» за свързаните с акаунта unit_id. */
+  const viewerOwingTotal = useMemo(() => {
+    if (!isViewer) return 0
+    return unitSummaryRows.reduce(
+      (sum, row) => (viewerLinkedUnitIds.has(row.unit.id) ? sum + row.totalRem : sum),
+      0
+    )
+  }, [isViewer, unitSummaryRows, viewerLinkedUnitIds])
+
   if (loading) {
     return <div>Зареждане...</div>
   }
@@ -844,21 +878,29 @@ export default function Obligations() {
             ))}
           </select>
         </div>
-        <div className="payments-count">
-          Показване: {filteredPayments.length} от {payments.length} плащания
-        </div>
+        {!isViewer && (
+          <div className="payments-count">
+            Показване: {filteredPayments.length} от {payments.length} плащания
+          </div>
+        )}
       </div>
 
-      <div className="stats-cards obligations-stats-simple">
-        <div className="stat-card">
-          <div className="stat-label">Обща сума (показани)</div>
-          <div className="stat-value">{stats.total.toFixed(2)} €</div>
+      {isViewer ? (
+        <div className="stats-cards obligations-stats-simple">
+          <div className="stat-card">
+            <div className="stat-label">Вашите задължения</div>
+            <div className="obligations-stat-sublabel">Остатък</div>
+            <div className="stat-value">{viewerOwingTotal.toFixed(2)} €</div>
+          </div>
         </div>
-        <div className="stat-card paid">
-          <div className="stat-label">Брой плащания</div>
-          <div className="stat-value">{stats.count}</div>
+      ) : (
+        <div className="stats-cards obligations-stats-simple">
+          <div className="stat-card">
+            <div className="stat-label">Обща сума (показани)</div>
+            <div className="stat-value">{stats.total.toFixed(2)} €</div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="obligations-period-panel">
         {units.length > 0 && unitSummaryRows.length > 0 && (

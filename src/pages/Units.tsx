@@ -504,9 +504,9 @@ export default function Units() {
                 const label = `${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`
                 const lines = viewerDueLines[unit.id]
                 const pays = viewerUnitPayments[unit.id] ?? []
-                const ob = unit.opening_balance
-                const obNum = typeof ob === 'string' ? parseFloat(ob) : Number(ob)
-                const showOb = Number.isFinite(obNum)
+                const hasTenant = [unit.tenant_name, unit.tenant_email, unit.tenant_phone].some(
+                  (x) => (x?.trim()?.length ?? 0) > 0
+                )
                 const created = unit.created_at
                   ? format(new Date(unit.created_at), 'd.MM.yyyy', { locale: bg })
                   : '—'
@@ -539,23 +539,21 @@ export default function Units() {
                           </div>
                         </dd>
                       </div>
-                      <div>
-                        <dt>Наемател</dt>
-                        <dd>
-                          {d(unit.tenant_name)}
-                          <div className="viewer-unit-dl-sub">
-                            <span>Имейл: {d(unit.tenant_email)}</span>
-                            <span>Телефон: {d(unit.tenant_phone)}</span>
-                          </div>
-                        </dd>
-                      </div>
+                      {hasTenant && (
+                        <div>
+                          <dt>Наемател</dt>
+                          <dd>
+                            {d(unit.tenant_name)}
+                            <div className="viewer-unit-dl-sub">
+                              <span>Имейл: {d(unit.tenant_email)}</span>
+                              <span>Телефон: {d(unit.tenant_phone)}</span>
+                            </div>
+                          </dd>
+                        </div>
+                      )}
                       <div>
                         <dt>Бележки</dt>
                         <dd className="viewer-unit-notes">{d(unit.notes)}</dd>
-                      </div>
-                      <div>
-                        <dt>Пренесен дълг по обект (€)</dt>
-                        <dd>{showOb ? formatMoneyBg(obNum) : '—'}</dd>
                       </div>
                       <div>
                         <dt>Обект в системата</dt>
