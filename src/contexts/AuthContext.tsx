@@ -51,9 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.id) return
     const ping = () => {
-      void supabase.rpc('touch_user_last_active').then(({ error }) => {
-        if (error) {
-          console.warn('[Auth] touch_user_last_active:', error.message, '— миграция 053?')
+      void supabase.rpc('touch_user_last_active').then((result) => {
+        if (result.error) {
+          console.warn('[Auth] touch_user_last_active:', result.error.message, '— миграция 053?')
         }
       })
     }
