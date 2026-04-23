@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Wallet } from 'lucide-react'
 import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
-import { supabase, supabaseQuery } from '../lib/supabase'
 import { IncomeRecords } from './Income'
 import Expenses from './Expenses'
 import FinancesLiquidity from './FinancesLiquidity'
@@ -13,8 +12,6 @@ export default function Finances() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [year, setYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
   const [tab, setTab] = useState<'liquidity' | 'income' | 'expenses'>('liquidity')
-  const [incomeSum, setIncomeSum] = useState(0)
-  const [expenseSum, setExpenseSum] = useState(0)
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -32,26 +29,6 @@ export default function Finances() {
     }
   }
 
-  useEffect(() => {
-    const load = async () => {
-      let iq = supabase.from('income').select('amount')
-      let eq = supabase.from('expenses').select('amount')
-      if (year !== 'all') {
-        const a = `${year}-01-01`
-        const b = `${year}-12-31`
-        iq = iq.gte('date', a).lte('date', b)
-        eq = eq.gte('date', a).lte('date', b)
-      }
-      const [ir, er] = await Promise.all([supabaseQuery(() => iq), supabaseQuery(() => eq)])
-      const isum = (ir.data as { amount: number }[] | null)?.reduce((s, r) => s + Number(r.amount), 0) ?? 0
-      const esum = (er.data as { amount: number }[] | null)?.reduce((s, r) => s + Number(r.amount), 0) ?? 0
-      setIncomeSum(isum)
-      setExpenseSum(esum)
-    }
-    void load()
-  }, [year])
-
-  const balance = incomeSum - expenseSum
   const tabBtn = (active: boolean) =>
     ({
       padding: '0.5rem 1rem',
@@ -84,30 +61,6 @@ export default function Finances() {
         <div className="page-toolbar">
           <YearScopeSelect value={year} onChange={setYear} id="finances-year" />
         </div>
-      )}
-
-      {tab !== 'liquidity' && (
-      <div
-        className="income-summary-cards"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}
-      >
-        <div className="summary-card">
-          <h3>Приходи {year === 'all' ? '' : `(${year})`}</h3>
-          <div className="summary-amount" style={{ color: 'var(--success)' }}>
-            {incomeSum.toFixed(2)} €
-          </div>
-        </div>
-        <div className="summary-card">
-          <h3>Разходи {year === 'all' ? '' : `(${year})`}</h3>
-          <div className="summary-amount" style={{ color: 'var(--danger)' }}>
-            {expenseSum.toFixed(2)} €
-          </div>
-        </div>
-        <div className="summary-card">
-          <h3>Баланс (приходи − разходи)</h3>
-          <div className="summary-amount">{balance.toFixed(2)} €</div>
-        </div>
-      </div>
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '1.25rem' }}>

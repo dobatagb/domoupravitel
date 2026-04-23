@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { format } from 'date-fns'
+import { bg } from 'date-fns/locale'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Plus, Edit2, Trash2, Filter } from 'lucide-react'
+import { paymentDescriptionLine, paymentMethodLabels } from '../lib/paymentDescription'
+import { Plus, Edit2, Trash2, Filter, Archive, ArchiveRestore } from 'lucide-react'
 import { useUnitGroups } from '../hooks/useUnitGroups'
 import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 import type { UnitGroup } from '../types/unitGroup'
@@ -13,6 +16,7 @@ interface Unit {
   group_id: string
   type: string
   number: string
+  archived?: boolean
   area?: number
   owner_name?: string
   owner_email: string | null
@@ -32,6 +36,43 @@ const unitSelectFields = `
           group:group_id (*)
         `
 
+/** Брой плащания с описание/приспадане/начин (като «Задължения») на обект в «Мои обекти». */
+const VIEWER_PAYMENTS_LIMIT = 8
+
+type ViewerUnitPayment = {
+  id: string
+  displayDate: string
+  description: string
+  methodLabel: string
+  amount: number
+}
+
+type PaymentRowForViewer = {
+  id: string
+  unit_id: string
+  amount: number | string
+  payment_date: string | null
+  created_at?: string | null
+  notes: string | null
+  payment_method: string | null
+  payment_allocations: {
+    amount: number | string
+    unit_obligations: { title: string; kind: string } | null
+  }[] | null
+  income: {
+    type: string
+    description: string
+    date: string
+    period_start: string | null
+    period_end: string | null
+  } | null
+}
+
+function paymentDateSortValue(p: { payment_date: string | null; created_at?: string | null }): number {
+  const d = p.payment_date || (p.created_at ? p.created_at.split('T')[0] : null)
+  return d ? new Date(d).getTime() : 0
+}
+
 function formatMoneyBg(n: number): string {
   return `${n.toLocaleString('bg-BG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 }
@@ -45,8 +86,13 @@ export default function Units() {
   const [showModal, setShowModal] = useState(false)
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
   const [filterGroupId, setFilterGroupId] = useState<string | 'all'>('all')
+  const [showArchived, setShowArchived] = useState(false)
+  const [page, setPage] = useState(1)
+  const UNITS_PAGE_SIZE = 12
   /** За viewer: редове задължения с остатък по unit_id. */
   const [viewerDueLines, setViewerDueLines] = useState<Record<string, { title: string; rem: number }[]>>({})
+  /** За viewer: последни плащания по unit_id. */
+  const [viewerUnitPayments, setViewerUnitPayments] = useState<Record<string, ViewerUnitPayment[]>>({})
   const [formData, setFormData] = useState({
     group_id: '',
     number: '',
@@ -61,6 +107,98 @@ export default function Units() {
     floor: '',
   })
 
+  const buildViewerUnitPayments = (ids: string[], pays: PaymentRowForViewer[] | null) => {
+    const grouped: Record<string, PaymentRowForViewer[]> = {}
+    for (const uid of ids) grouped[uid] = []
+    for (const p of pays || []) {
+      if (!grouped[p.unit_id]) grouped[p.unit_id] = []
+      grouped[p.unit_id].push(p)
+    }
+    const out: Record<string, ViewerUnitPayment[]> = {}
+    for (const uid of ids) {
+      const list: ViewerUnitPayment[] = (grouped[uid] || [])
+        .sort((a, b) => paymentDateSortValue(b) - paymentDateSortValue(a))
+        .slice(0, VIEWER_PAYMENTS_LIMIT)
+        .map((p) => {
+          const dRaw = p.payment_date || (p.created_at ? p.created_at.split('T')[0] : null)
+          const displayDate = dRaw ? format(new Date(dRaw), 'd.MM.yyyy', { locale: bg }) : '—'
+          const desc = paymentDescriptionLine({
+            income: p.income,
+            payment_allocations: p.payment_allocations,
+            notes: p.notes,
+          })
+          const m =
+            p.payment_method && paymentMethodLabels[p.payment_method]
+              ? paymentMethodLabels[p.payment_method]
+              : '—'
+          const amt = typeof p.amount === 'string' ? parseFloat(p.amount) : Number(p.amount)
+          return {
+            id: p.id,
+            displayDate,
+            description: desc,
+            methodLabel: m,
+            amount: Number.isFinite(amt) ? amt : 0,
+          }
+        })
+      out[uid] = list
+    }
+    return out
+  }
+
+  const loadViewerData = async (userId: string) => {
+    setUnits([])
+    setViewerDueLines({})
+    setViewerUnitPayments({})
+    const { data: links, error: linkErr } = await supabase
+      .from('user_unit_links')
+      .select('unit_id')
+      .eq('user_id', userId)
+    if (linkErr) throw linkErr
+    const ids = (links || []).map((r: { unit_id: string }) => r.unit_id)
+    if (ids.length === 0) return
+    const { data, error } = await supabase
+      .from('units')
+      .select(unitSelectFields)
+      .in('id', ids)
+      .eq('archived', false)
+    if (error) throw error
+    const list = sortUnitsByTypeAndNumber((data as Unit[]) || [])
+    setUnits(list)
+    const { data: obl, error: oblErr } = await supabase
+      .from('unit_obligations')
+      .select('unit_id, title, amount_remaining')
+      .in('unit_id', ids)
+      .gt('amount_remaining', 0.005)
+    if (!oblErr && obl) {
+      const m: Record<string, { title: string; rem: number }[]> = {}
+      for (const raw of obl) {
+        const r = raw as { unit_id: string; title: string; amount_remaining: number | string }
+        const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
+        if (!Number.isFinite(rem) || rem <= 0) continue
+        if (!m[r.unit_id]) m[r.unit_id] = []
+        m[r.unit_id].push({ title: r.title || 'Задължение', rem })
+      }
+      setViewerDueLines(m)
+    } else {
+      setViewerDueLines({})
+    }
+    const { data: payData, error: payErr } = await supabase
+      .from('payments')
+      .select(
+        `id, unit_id, amount, payment_date, created_at, status, notes, payment_method,
+         payment_allocations ( amount, unit_obligations ( title, kind ) ),
+         income:income_id ( type, description, date, period_start, period_end )`
+      )
+      .in('unit_id', ids)
+      .eq('status', 'paid')
+    if (payErr) {
+      console.error('viewer unit payments', payErr)
+      setViewerUnitPayments({})
+      return
+    }
+    setViewerUnitPayments(buildViewerUnitPayments(ids, (payData as PaymentRowForViewer[]) || null))
+  }
+
   useEffect(() => {
     void loadData()
   }, [user?.id, userRole])
@@ -74,44 +212,10 @@ export default function Units() {
         if (!user?.id) {
           setUnits([])
           setViewerDueLines({})
+          setViewerUnitPayments({})
           return
         }
-        const { data: links, error: linkErr } = await supabase
-          .from('user_unit_links')
-          .select('unit_id')
-          .eq('user_id', user.id)
-        if (linkErr) throw linkErr
-        const ids = (links || []).map((r: { unit_id: string }) => r.unit_id)
-        if (ids.length === 0) {
-          setUnits([])
-          setViewerDueLines({})
-          return
-        }
-        const { data, error } = await supabase
-          .from('units')
-          .select('id, group_id, type, number, floor, opening_balance, group:group_id (*)')
-          .in('id', ids)
-        if (error) throw error
-        const list = sortUnitsByTypeAndNumber((data as Unit[]) || [])
-        setUnits(list)
-        const { data: obl, error: oblErr } = await supabase
-          .from('unit_obligations')
-          .select('unit_id, title, amount_remaining')
-          .in('unit_id', ids)
-          .gt('amount_remaining', 0.005)
-        if (!oblErr && obl) {
-          const m: Record<string, { title: string; rem: number }[]> = {}
-          for (const raw of obl) {
-            const r = raw as { unit_id: string; title: string; amount_remaining: number | string }
-            const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
-            if (!Number.isFinite(rem) || rem <= 0) continue
-            if (!m[r.unit_id]) m[r.unit_id] = []
-            m[r.unit_id].push({ title: r.title || 'Задължение', rem })
-          }
-          setViewerDueLines(m)
-        } else {
-          setViewerDueLines({})
-        }
+        await loadViewerData(user.id)
         return
       }
 
@@ -135,43 +239,10 @@ export default function Units() {
         if (!user?.id) {
           setUnits([])
           setViewerDueLines({})
+          setViewerUnitPayments({})
           return
         }
-        const { data: links } = await supabase
-          .from('user_unit_links')
-          .select('unit_id')
-          .eq('user_id', user.id)
-        const ids = (links || []).map((r: { unit_id: string }) => r.unit_id)
-        if (ids.length === 0) {
-          setUnits([])
-          setViewerDueLines({})
-          return
-        }
-        const { data, error } = await supabase
-          .from('units')
-          .select('id, group_id, type, number, floor, opening_balance, group:group_id (*)')
-          .in('id', ids)
-        if (error) throw error
-        const list = sortUnitsByTypeAndNumber((data as Unit[]) || [])
-        setUnits(list)
-        const { data: obl, error: oblErr } = await supabase
-          .from('unit_obligations')
-          .select('unit_id, title, amount_remaining')
-          .in('unit_id', ids)
-          .gt('amount_remaining', 0.005)
-        if (!oblErr && obl) {
-          const m: Record<string, { title: string; rem: number }[]> = {}
-          for (const raw of obl) {
-            const r = raw as { unit_id: string; title: string; amount_remaining: number | string }
-            const rem = typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining)
-            if (!Number.isFinite(rem) || rem <= 0) continue
-            if (!m[r.unit_id]) m[r.unit_id] = []
-            m[r.unit_id].push({ title: r.title || 'Задължение', rem })
-          }
-          setViewerDueLines(m)
-        } else {
-          setViewerDueLines({})
-        }
+        await loadViewerData(user.id)
         return
       }
       const { data, error } = await supabase
@@ -229,7 +300,7 @@ export default function Units() {
           throw error
         }
       } else {
-        const { error } = await supabase.from('units').insert(unitData)
+        const { error } = await supabase.from('units').insert({ ...unitData, archived: false })
 
         if (error) {
           console.error('Error inserting unit:', error)
@@ -265,6 +336,33 @@ export default function Units() {
       floor: unit.floor ?? '',
     })
     setShowModal(true)
+  }
+
+  const handleToggleArchive = async (unit: Unit) => {
+    if (isViewer) return
+    if (!canEdit()) return
+    const next = !unit.archived
+    if (
+      !confirm(
+        next
+          ? `Архивиране на обект „${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}“? Ще изчезне от падащите списъци за задължения.`
+          : `Възстановяване на обект от архива?`
+      )
+    ) {
+      return
+    }
+    try {
+      const { error } = await supabase.from('units').update({ archived: next }).eq('id', unit.id)
+      if (error) throw error
+      void fetchUnits()
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Грешка'
+      if (msg.includes('archived') || msg.includes('column')) {
+        alert(`${msg}\n\nИзпълни миграция database_migrations/054_units_archived.sql в Supabase.`)
+        return
+      }
+      alert(msg)
+    }
   }
 
   const handleDelete = async (id: string) => {
@@ -305,11 +403,22 @@ export default function Units() {
     setShowModal(true)
   }
 
-  const filteredUnits = isViewer
+  const afterGroup = isViewer
     ? units
     : filterGroupId === 'all'
       ? units
       : units.filter((unit) => unit.group_id === filterGroupId)
+  const filteredUnits = isViewer
+    ? afterGroup
+    : afterGroup.filter((u) => showArchived || !u.archived)
+  const sortedList = sortUnitsByTypeAndNumber(filteredUnits)
+  const pageCount = Math.max(1, Math.ceil(sortedList.length / UNITS_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pagedUnits = sortedList.slice((safePage - 1) * UNITS_PAGE_SIZE, safePage * UNITS_PAGE_SIZE)
+
+  useEffect(() => {
+    setPage(1)
+  }, [filterGroupId, showArchived, isViewer])
 
   if (pageLoading) {
     return <div>Зареждане...</div>
@@ -322,7 +431,7 @@ export default function Units() {
           <h1>{isViewer ? 'Мои обекти' : 'Обекти'}</h1>
           <p>
             {isViewer
-              ? 'Преглед по номер и етаж. Данните за обектите въвежда домоуправителят; по-долу са текущите задължения с остатък (заглавията са като в „Задължения“ и „Периоди“).'
+              ? 'Пълни данни за свързаните с акаунта обекти (само преглед) — площ, контакти, остатъци по задължения и последните плащания с описание и приспадане като в „Задължения“.'
               : 'Управление на апартаменти, гаражи, магазини и паркоместа'}
           </p>
           {canEdit() && (
@@ -357,143 +466,266 @@ export default function Units() {
               ))}
             </select>
           </div>
+          <div className="filter-group units-archive-filter">
+            <label>
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+              />{' '}
+              Покажи архивирани
+            </label>
+          </div>
           <div className="units-count">
-            Показване: {filteredUnits.length} от {units.length} обекта
+            {sortedList.length} обекта
+            {pageCount > 1 ? ` · стр. ${safePage}/${pageCount}` : ''}
           </div>
         </div>
       )}
 
-      <div className="units-grid">
-        {filteredUnits.length === 0 ? (
+      {isViewer && sortedList.length > 0 && (
+        <div className="viewer-units-count">
+          {sortedList.length} {sortedList.length === 1 ? 'обект' : 'обекта'}
+          {pageCount > 1 ? ` · стр. ${safePage}/${pageCount}` : ''}
+        </div>
+      )}
+
+      <div className="units-table-wrap">
+        {sortedList.length === 0 ? (
           <div className="empty-state">
             {isViewer
               ? 'Няма свързани обекти към вашия акаунт. Помолете домоуправителя да ви добави към вашия апартамент / обект.'
-              : 'Няма регистрирани обекти'}
+              : 'Няма регистрирани обекти за този филтър.'}
           </div>
-        ) : (
-          sortUnitsByTypeAndNumber(filteredUnits).map((unit) => {
-            if (isViewer) {
-              const lines = viewerDueLines[unit.id]
-              return (
-                <div key={unit.id} className="unit-card unit-card-viewer">
-                  <div className="unit-header">
-                    <h3>
-                      Ап. {formatUnitNumberDisplay(unit.number)}
-                      {unit.group?.name ? (
-                        <span className="unit-card-viewer-group"> · {unit.group.name}</span>
-                      ) : null}
-                    </h3>
-                  </div>
-                  <div className="unit-details">
-                    {unit.floor?.trim() && (
-                      <div className="detail-item">
-                        <span className="detail-label">Етаж:</span>
-                        <span className="detail-value">{unit.floor}</span>
+        ) : isViewer ? (
+          <>
+            <div className="viewer-units-list">
+              {pagedUnits.map((unit) => {
+                const label = `${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`
+                const lines = viewerDueLines[unit.id]
+                const pays = viewerUnitPayments[unit.id] ?? []
+                const ob = unit.opening_balance
+                const obNum = typeof ob === 'string' ? parseFloat(ob) : Number(ob)
+                const showOb = Number.isFinite(obNum)
+                const created = unit.created_at
+                  ? format(new Date(unit.created_at), 'd.MM.yyyy', { locale: bg })
+                  : '—'
+                const d = (v: string | null | undefined) => (v?.trim() ? v.trim() : '—')
+                return (
+                  <article key={unit.id} className="viewer-unit-card">
+                    <h2 className="viewer-unit-title">{label}</h2>
+                    <dl className="viewer-unit-dl">
+                      <div>
+                        <dt>Група</dt>
+                        <dd>{unit.group?.name ?? labelForCode(unit.type)}</dd>
                       </div>
-                    )}
-                    <div className="viewer-due-section">
-                      <div className="detail-label" style={{ marginBottom: '0.35rem' }}>
-                        Текущи задължения (остатък)
+                      <div>
+                        <dt>Етаж</dt>
+                        <dd>{d(unit.floor)}</dd>
                       </div>
+                      <div>
+                        <dt>Площ (м²)</dt>
+                        <dd>
+                          {unit.area != null && Number.isFinite(Number(unit.area)) ? String(unit.area) : '—'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Собственик</dt>
+                        <dd>
+                          {d(unit.owner_name)}
+                          <div className="viewer-unit-dl-sub">
+                            <span>Имейл: {d(unit.owner_email)}</span>
+                            <span>Телефон: {d(unit.owner_phone)}</span>
+                          </div>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Наемател</dt>
+                        <dd>
+                          {d(unit.tenant_name)}
+                          <div className="viewer-unit-dl-sub">
+                            <span>Имейл: {d(unit.tenant_email)}</span>
+                            <span>Телефон: {d(unit.tenant_phone)}</span>
+                          </div>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Бележки</dt>
+                        <dd className="viewer-unit-notes">{d(unit.notes)}</dd>
+                      </div>
+                      <div>
+                        <dt>Пренесен дълг по обект (€)</dt>
+                        <dd>{showOb ? formatMoneyBg(obNum) : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Обект в системата</dt>
+                        <dd>от {created}</dd>
+                      </div>
+                    </dl>
+                    <section className="viewer-unit-section" aria-label="Остатъци по задължения">
+                      <h3 className="viewer-unit-h3">Остатъци по задължения</h3>
                       {lines && lines.length > 0 ? (
                         <ul className="viewer-due-list">
                           {lines.map((line, i) => (
                             <li key={`${line.title}-${i}`}>
-                              <span className="viewer-due-title">{line.title}</span>
+                              <span className="viewer-due-title">{line.title}</span>{' '}
                               <span className="viewer-due-amt">{formatMoneyBg(line.rem)}</span>
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <p className="form-hint" style={{ margin: 0 }}>
-                          Няма остатък по задължения към момента.
-                        </p>
+                        <p className="viewer-empty-line">Няма остатък</p>
                       )}
-                    </div>
-                  </div>
-                </div>
-              )
-            }
-            const openingBal =
-              unit.opening_balance != null && unit.opening_balance !== ''
-                ? Number(unit.opening_balance)
-                : 0
-            return (
-              <div key={unit.id} className="unit-card">
-                <div className="unit-header">
-                  <div>
-                    <h3>
-                      {unit.group?.name ?? labelForCode(unit.type)} {formatUnitNumberDisplay(unit.number)}
-                    </h3>
-                  </div>
-                  {canEdit() && (
-                    <div className="unit-actions">
-                      <button
-                        className="icon-btn"
-                        onClick={() => handleEdit(unit)}
-                        title="Редактирай"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button
-                        className="icon-btn danger"
-                        onClick={() => handleDelete(unit.id)}
-                        title="Изтрий"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="unit-details">
-                  <div className="detail-item">
-                    <span className="detail-label">Квадратура:</span>
-                    <span className="detail-value">{unit.area ?? '—'} м²</span>
-                  </div>
-                  {unit.floor?.trim() && (
-                    <div className="detail-item">
-                      <span className="detail-label">Етаж:</span>
-                      <span className="detail-value">{unit.floor}</span>
-                    </div>
-                  )}
-                  <div className="detail-item">
-                    <span className="detail-label">Собственик:</span>
-                    <span className="detail-value">{unit.owner_name ?? '—'}</span>
-                  </div>
-                  {unit.owner_email && (
-                    <div className="detail-item">
-                      <span className="detail-label">Имейл:</span>
-                      <span className="detail-value">{unit.owner_email}</span>
-                    </div>
-                  )}
-                  {unit.owner_phone && (
-                    <div className="detail-item">
-                      <span className="detail-label">Телефон:</span>
-                      <span className="detail-value">{unit.owner_phone}</span>
-                    </div>
-                  )}
-                  {unit.tenant_name && (
-                    <div className="detail-item tenant">
-                      <span className="detail-label">Наемател:</span>
-                      <span className="detail-value">{unit.tenant_name}</span>
-                    </div>
-                  )}
-                  {unit.tenant_email && (
-                    <div className="detail-item tenant">
-                      <span className="detail-label">Имейл (наемател):</span>
-                      <span className="detail-value">{unit.tenant_email}</span>
-                    </div>
-                  )}
-                  {openingBal > 0 && (
-                    <div className="detail-item">
-                      <span className="detail-label">Пренесен дълг:</span>
-                      <span className="detail-value">{openingBal.toFixed(2)} €</span>
-                    </div>
-                  )}
-                </div>
+                    </section>
+                    <section className="viewer-unit-section" aria-label="Последни плащания">
+                      <h3 className="viewer-unit-h3">Последни плащания (до {VIEWER_PAYMENTS_LIMIT})</h3>
+                      {pays.length > 0 ? (
+                        <div className="table-wrap viewer-payments-table-wrap">
+                          <table className="data-table viewer-payments-table">
+                            <thead>
+                              <tr>
+                                <th>Дата</th>
+                                <th>Описание / приспадане</th>
+                                <th>Начин</th>
+                                <th className="num">Сума</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pays.map((p) => (
+                                <tr key={p.id}>
+                                  <td>{p.displayDate}</td>
+                                  <td className="viewer-payment-desc">{p.description}</td>
+                                  <td>{p.methodLabel}</td>
+                                  <td className="num">{formatMoneyBg(p.amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="viewer-empty-line">Няма регистрирани плащания</p>
+                      )}
+                    </section>
+                  </article>
+                )
+              })}
+            </div>
+            {pageCount > 1 && (
+              <div className="units-pager">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Назад
+                </button>
+                <span>
+                  {safePage} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={safePage >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                >
+                  Напред
+                </button>
               </div>
-            )
-          })
+            )}
+          </>
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table className="data-table units-data-table">
+                <thead>
+                  <tr>
+                    <th>Обект</th>
+                    <th>Етаж</th>
+                    <th className="num">м²</th>
+                    <th>Собственик</th>
+                    <th>Статус</th>
+                    {canEdit() && <th>Действия</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedUnits.map((unit) => {
+                    const label = `${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`
+                    return (
+                      <tr key={unit.id} className={unit.archived ? 'units-row-archived' : undefined}>
+                        <td>
+                          <strong>{label}</strong>
+                        </td>
+                        <td>{unit.floor?.trim() || '—'}</td>
+                        <td className="num">{unit.area != null ? String(unit.area) : '—'}</td>
+                        <td>{unit.owner_name ?? '—'}</td>
+                        <td>
+                          {unit.archived ? (
+                            <span className="units-badge units-badge-archived">Архив</span>
+                          ) : (
+                            <span className="units-badge units-badge-active">Активен</span>
+                          )}
+                        </td>
+                        {canEdit() && (
+                          <td>
+                            <div className="unit-actions">
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                onClick={() => handleEdit(unit)}
+                                title="Редактирай"
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                onClick={() => void handleToggleArchive(unit)}
+                                title={unit.archived ? 'Възстанови от архив' : 'Архивирай'}
+                              >
+                                {unit.archived ? <ArchiveRestore size={18} /> : <Archive size={18} />}
+                              </button>
+                              <button
+                                type="button"
+                                className="icon-btn danger"
+                                onClick={() => handleDelete(unit.id)}
+                                title="Изтрий"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {pageCount > 1 && (
+              <div className="units-pager">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Назад
+                </button>
+                <span>
+                  {safePage} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={safePage >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                >
+                  Напред
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

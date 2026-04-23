@@ -82,6 +82,7 @@ export default function Documents() {
         supabase
           .from('units')
           .select('id, type, number, owner_name, group:group_id (name)')
+          .eq('archived', false)
           .order('type', { ascending: true })
           .order('number', { ascending: true }),
       ])

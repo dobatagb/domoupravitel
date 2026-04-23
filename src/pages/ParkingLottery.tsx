@@ -146,6 +146,7 @@ export default function ParkingLottery() {
     const { data, error: e } = await supabase
       .from('units')
       .select('id, number, group:group_id(name, code)')
+      .eq('archived', false)
     if (e) throw e
     const rows = ((data as unknown as ParkingUnitRow[]) || []).filter((u) => u.group?.code === 'parking')
     setParkingUnits(sortParkingUnits(rows))

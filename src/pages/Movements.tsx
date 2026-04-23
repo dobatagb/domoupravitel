@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { History } from 'lucide-react'
+import { Download, History } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
+import { paymentDescriptionWithMethod } from '../lib/paymentDescription'
 import './Movements.css'
 
 type MovementKind = 'in' | 'out'
@@ -14,16 +15,25 @@ interface MovementRow {
   date: string | null
   label: string
   amount: number
+  /** Като в «Задължения» за плащания; за разходи — кратък контекст */
+  obligationText: string
   detail: string
   recorderEmail: string | null
   sortTs: number
 }
 
+const PAGE_SIZE = 25
+
 export default function Movements() {
-  const { user } = useAuth()
+  const { user, userRole } = useAuth()
+  const isAdmin = userRole === 'admin'
   const [rows, setRows] = useState<MovementRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterKind, setFilterKind] = useState<'all' | 'in' | 'out'>('all')
+  const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -34,7 +44,10 @@ export default function Movements() {
           supabase
             .from('payments')
             .select(
-              'id, amount, payment_date, created_at, created_by, notes, status, units ( number, group:group_id (name) )'
+              `id, amount, payment_date, created_at, created_by, notes, status, payment_method,
+               payment_allocations ( amount, unit_obligations ( title, kind ) ),
+               income:income_id ( type, description, date, period_start, period_end ),
+               units ( number, group:group_id (name) )`
             )
             .order('created_at', { ascending: false })
             .limit(800)
@@ -94,12 +107,28 @@ export default function Movements() {
         const status = String(p.status ?? '')
         const notes = (p.notes as string | null)?.trim() ?? ''
         const createdBy = p.created_by as string | null | undefined
+        const paymentMethod = p.payment_method as string | null | undefined
+        const allocs = p.payment_allocations as
+          | { amount: number | string; unit_obligations: { title: string; kind: string } | null }[]
+          | null
+        const income = p.income as {
+          type: string
+          description: string
+          date: string
+          period_start: string | null
+          period_end: string | null
+        } | null
+        const obligationText = paymentDescriptionWithMethod(
+          { income, payment_allocations: allocs, notes: p.notes as string | null },
+          paymentMethod ?? null
+        )
         out.push({
           id: `p-${pid}`,
           kind: 'in',
           date: dateStr,
           label: 'Постъпило плащане',
           amount: amt,
+          obligationText,
           detail: [unitLabel, status === 'paid' ? 'платено' : status, notes].filter(Boolean).join(' · '),
           recorderEmail: createdBy ? emailById[createdBy] ?? null : null,
           sortTs: t,
@@ -124,6 +153,7 @@ export default function Movements() {
           date: dateStr,
           label: 'Разход',
           amount: Number(x.amount) || 0,
+          obligationText: [x.category, x.description].filter(Boolean).join(': '),
           detail: `${x.category}: ${x.description}`,
           recorderEmail: x.created_by ? emailById[x.created_by] ?? null : null,
           sortTs: t,
@@ -151,6 +181,52 @@ export default function Movements() {
     void load()
   }, [user, load])
 
+  const filteredRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (filterKind !== 'all' && r.kind !== filterKind) return false
+      if (!r.date) return true
+      const t = r.date
+      if (filterDateFrom && t < filterDateFrom) return false
+      if (filterDateTo && t > filterDateTo) return false
+      return true
+    })
+  }, [rows, filterKind, filterDateFrom, filterDateTo])
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pagedRows = useMemo(
+    () => filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filteredRows, safePage]
+  )
+
+  useEffect(() => {
+    setPage(1)
+  }, [filterDateFrom, filterDateTo, filterKind])
+
+  const exportFilteredCsv = () => {
+    if (!isAdmin) return
+    const esc = (s: string) => {
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+      return s
+    }
+    const header = ['Дата', 'Вид', 'Сума (€)', 'Описание (приспадане / начин)', 'Контекст', 'Записал']
+    const lines: string[] = [header.map(esc).join(',')]
+    for (const r of filteredRows) {
+      const d = r.date ? format(new Date(r.date), 'yyyy-MM-dd') : ''
+      const k = r.kind === 'in' ? 'Постъпление' : 'Разход'
+      const amt = (r.kind === 'in' ? 1 : -1) * r.amount
+      lines.push(
+        [d, k, amt.toFixed(2), r.obligationText, r.detail, r.recorderEmail ?? ''].map(esc).join(','),
+      )
+    }
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `dvizheniya-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   if (loading) {
     return <div>Зареждане...</div>
   }
@@ -177,10 +253,69 @@ export default function Movements() {
         </div>
       )}
 
+      <div className="movements-filters">
+        <div className="movements-filter-group">
+          <label htmlFor="mov-d1">Дата от</label>
+          <input
+            id="mov-d1"
+            type="date"
+            value={filterDateFrom}
+            onChange={(e) => setFilterDateFrom(e.target.value)}
+            className="movements-filter-input"
+          />
+        </div>
+        <div className="movements-filter-group">
+          <label htmlFor="mov-d2">Дата до</label>
+          <input
+            id="mov-d2"
+            type="date"
+            value={filterDateTo}
+            onChange={(e) => setFilterDateTo(e.target.value)}
+            className="movements-filter-input"
+          />
+        </div>
+        <div className="movements-filter-group">
+          <label htmlFor="mov-kind">Вид</label>
+          <select
+            id="mov-kind"
+            value={filterKind}
+            onChange={(e) => setFilterKind(e.target.value as 'all' | 'in' | 'out')}
+            className="movements-filter-input"
+          >
+            <option value="all">Всички</option>
+            <option value="in">Постъпления</option>
+            <option value="out">Разходи</option>
+          </select>
+        </div>
+        <div className="movements-filters-right">
+          <div className="movements-filter-hint">
+            {filteredRows.length} записа
+            {pageCount > 1 ? ` · стр. ${safePage} / ${pageCount}` : ''}
+          </div>
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn-secondary movements-export-btn"
+              onClick={exportFilteredCsv}
+              disabled={filteredRows.length === 0}
+              title="Експорт в CSV (UTF-8) — само за администратор"
+            >
+              <Download size={18} aria-hidden />
+              Експорт
+            </button>
+          )}
+        </div>
+      </div>
+
       {rows.length === 0 && !error ? (
         <p className="movements-muted">Няма записи.</p>
       ) : (
         <div className="table-wrap movements-table-wrap">
+          {filteredRows.length === 0 && (
+            <p className="movements-muted" style={{ padding: '1rem' }}>
+              Няма записи за избраните филтри.
+            </p>
+          )}
           <table className="movements-table">
             <thead>
               <tr>
@@ -188,11 +323,12 @@ export default function Movements() {
                 <th>Вид</th>
                 <th className="num">Сума (€)</th>
                 <th>Описание</th>
+                <th>Контекст</th>
                 <th>Записал</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {pagedRows.map((r) => (
                 <tr key={r.id}>
                   <td>
                     {r.date
@@ -204,12 +340,37 @@ export default function Movements() {
                     {r.kind === 'in' ? '+' : '−'}
                     {r.amount.toFixed(2)}
                   </td>
+                  <td className="movements-obligation-col">{r.obligationText}</td>
                   <td>{r.detail}</td>
                   <td className="movements-recorder">{r.recorderEmail ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {rows.length > 0 && !error && pageCount > 1 && (
+        <div className="movements-pager">
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={safePage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Назад
+          </button>
+          <span className="movements-pager-info">
+            {safePage} / {pageCount}
+          </span>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={safePage >= pageCount}
+            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+          >
+            Напред
+          </button>
         </div>
       )}
     </div>

@@ -65,7 +65,12 @@ export default function UserManagement() {
   const load = useCallback(async () => {
     const [uRes, unitRes, linkRes] = await Promise.all([
       supabase.from('users').select('id, email, role, last_active_at').order('email'),
-      supabase.from('units').select('id, type, number, group:group_id(name)').order('type').order('number'),
+      supabase
+        .from('units')
+        .select('id, type, number, group:group_id(name)')
+        .eq('archived', false)
+        .order('type')
+        .order('number'),
       supabase.from('user_unit_links').select('id, user_id, unit_id'),
     ])
     if (uRes.error) throw uRes.error

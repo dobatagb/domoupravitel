@@ -10,15 +10,14 @@ import {
   Tags,
   CalendarRange,
   Users,
-  LayoutGrid,
   History,
   Download,
-  Wallet,
   Megaphone,
   Settings,
   Dices,
   Menu,
   X,
+  Wallet,
 } from 'lucide-react'
 import { usePwaInstall } from '../hooks/usePwaInstall'
 import './Layout.css'
@@ -100,33 +99,31 @@ export default function Layout() {
       .finally(() => setPasswordSaving(false))
   }
 
-  // Viewers виждат само ограничен набор от менюта
-  const navItems = userRole === 'viewer' 
-    ? [
-        { path: '/', label: 'Начало', icon: Home },
-        { path: '/announcements', label: 'Съобщения', icon: Megaphone },
-        { path: '/units', label: 'Мои обекти', icon: Building2 },
-        { path: '/obligations', label: 'Задължения', icon: CreditCard },
-        { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
-        { path: '/finances', label: 'Финанси', icon: Wallet },
-        { path: '/movements', label: 'Движения', icon: History },
-        { path: '/documents', label: 'Документи', icon: FileText },
-        { path: '/parking-lottery', label: 'Томбола паркоместа', icon: Dices },
-      ]
-    : [
-        { path: '/', label: 'Начало', icon: Home },
-        { path: '/announcements', label: 'Съобщения', icon: Megaphone },
-        { path: '/units', label: 'Обекти', icon: Building2 },
-        { path: '/users', label: 'Потребители', icon: Users },
-        { path: '/obligations', label: 'Задължения', icon: CreditCard },
-        { path: '/obligations-board', label: 'Табло задължения', icon: LayoutGrid },
-        { path: '/finances', label: 'Финанси', icon: Wallet },
-        { path: '/movements', label: 'Движения', icon: History },
-        { path: '/documents', label: 'Документи', icon: FileText },
-        { path: '/nomenclatures', label: 'Номенклатури', icon: Tags },
-        { path: '/billing-periods', label: 'Периоди', icon: CalendarRange },
-        { path: '/parking-lottery', label: 'Томбола паркоместа', icon: Dices },
-      ]
+  // Viewers виждат само ограничен набор от менюта. «Финанси» — само за администратор.
+  const navItems =
+    userRole === 'viewer'
+      ? [
+          { path: '/', label: 'Начало', icon: Home },
+          { path: '/announcements', label: 'Съобщения', icon: Megaphone },
+          { path: '/units', label: 'Мои обекти', icon: Building2 },
+          { path: '/obligations', label: 'Задължения', icon: CreditCard },
+          { path: '/movements', label: 'Движения', icon: History },
+          { path: '/documents', label: 'Документи', icon: FileText },
+          { path: '/parking-lottery', label: 'Томбола паркоместа', icon: Dices },
+        ]
+      : [
+          { path: '/', label: 'Начало', icon: Home },
+          { path: '/announcements', label: 'Съобщения', icon: Megaphone },
+          { path: '/units', label: 'Обекти', icon: Building2 },
+          { path: '/users', label: 'Потребители', icon: Users },
+          { path: '/obligations', label: 'Задължения', icon: CreditCard },
+          { path: '/movements', label: 'Движения', icon: History },
+          { path: '/documents', label: 'Документи', icon: FileText },
+          { path: '/nomenclatures', label: 'Номенклатури', icon: Tags },
+          { path: '/billing-periods', label: 'Периоди', icon: CalendarRange },
+          ...(userRole === 'admin' ? [{ path: '/finances', label: 'Финанси', icon: Wallet }] as const : []),
+          { path: '/parking-lottery', label: 'Томбола паркоместа', icon: Dices },
+        ]
 
   return (
     <div className="layout">

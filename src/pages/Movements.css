@@ -84,3 +84,77 @@
   font-size: 0.875rem;
   color: var(--text-light);
 }
+
+.movements-obligation-col {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+  max-width: 28rem;
+  vertical-align: top;
+}
+
+.movements-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 1.5rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow);
+}
+
+.movements-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.movements-filter-group label {
+  font-size: 0.8125rem;
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.movements-filter-input {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  min-width: 10rem;
+}
+
+.movements-filters-right {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding-bottom: 0.15rem;
+}
+
+.movements-filter-hint {
+  font-size: 0.875rem;
+  color: var(--text-light);
+}
+
+.movements-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.movements-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.movements-pager-info {
+  font-size: 0.9rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}

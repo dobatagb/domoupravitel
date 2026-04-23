@@ -198,6 +198,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.dashboard-payment-desc {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text);
+  max-width: 32rem;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -206,6 +213,168 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Viewer home: «Табло» */
+.dashboard--viewer-home .dashboard-subtitle {
+  margin-bottom: 1.25rem;
+}
+
+/* Viewer: две прозорче-карти (макет) */
+.dashboard-viewer-twin {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+  align-items: stretch;
+}
+
+.dashboard-viewer-window {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.15rem 1.25rem 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.dashboard-viewer-window-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.dashboard-viewer-subtitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 1rem 0 0.35rem;
+  color: var(--text);
+}
+
+.dashboard-viewer-subpanel-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin: 1rem 0 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+}
+
+.dashboard-viewer-window-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  color: var(--text-light);
+  line-height: 1.4;
+}
+
+.dashboard-viewer-metric-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.dashboard-viewer-metric-row--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .dashboard-viewer-metric-row--triple {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dashboard-viewer-metric {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.dashboard-viewer-metric-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-light);
+}
+
+.dashboard-viewer-metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.dashboard-viewer-metric-value--in {
+  color: var(--success);
+}
+
+.dashboard-viewer-metric-value--out {
+  color: var(--danger);
+}
+
+/* Трите колони с вертикални разделители (като макет) */
+.dashboard-viewer-bento {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--surface);
+  margin-top: 0.65rem;
+}
+
+.dashboard-viewer-bento-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 0.85rem;
+  min-width: 0;
+}
+
+.dashboard-viewer-bento-cell + .dashboard-viewer-bento-cell {
+  border-left: 1px solid var(--border);
+}
+
+.dashboard-viewer-bento-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-light);
+  line-height: 1.25;
+}
+
+.dashboard-viewer-bento-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.dashboard-viewer-bento-value--debt {
+  color: var(--danger);
+  font-size: 1.28rem;
+}
+
+.dashboard-viewer-bento-value--cash {
+  color: var(--success);
+  font-size: 1.22rem;
+}
+
+@media (max-width: 480px) {
+  .dashboard-viewer-bento {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-viewer-bento-cell + .dashboard-viewer-bento-cell {
+    border-left: none;
+    border-top: 1px solid var(--border);
   }
 }
 

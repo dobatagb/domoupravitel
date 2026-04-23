@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import { useAuth } from '../contexts/AuthContext'
-import { Filter, Edit2, Plus, Trash2, ChevronRight, History } from 'lucide-react'
+import { Filter, Edit2, Plus, Trash2, History } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import { useUnitGroups } from '../hooks/useUnitGroups'
 import { sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 import { unitOptionLabel } from '../lib/unitOptionLabel'
+import {
+  paymentDescriptionLine,
+  paymentMethodLabels,
+} from '../lib/paymentDescription'
 import './Obligations.css'
 
 interface PaymentAllocationRow {
@@ -45,38 +49,6 @@ interface Payment {
   } | null
 }
 
-const incomeTypeLabels: Record<string, string> = {
-  entry_fee: 'Входна такса',
-  parking_fee: 'Такса за паркоместо',
-  shop_fee: 'Такса за магазин',
-  other: 'Друго',
-}
-
-const paymentMethodLabels: Record<string, string> = {
-  cash: 'В брой',
-  bank_transfer: 'Банков превод',
-  card: 'Карта',
-  other: 'Друго',
-}
-
-function descriptionLine(payment: Payment): string {
-  if (payment.income) {
-    const t = incomeTypeLabels[payment.income.type] ?? payment.income.type
-    return `${t}: ${payment.income.description}`
-  }
-  const allocs = payment.payment_allocations
-  if (allocs && allocs.length > 0) {
-    const parts = allocs.map((a) => {
-      const t = a.unit_obligations?.title ?? 'задължение'
-      const amt = typeof a.amount === 'string' ? parseFloat(a.amount) : Number(a.amount)
-      return `${t} ${amt.toFixed(2)} €`
-    })
-    return `Приспадане: ${parts.join('; ')}`
-  }
-  if (payment.notes?.trim()) return payment.notes.trim()
-  return 'Ръчно регистрирано плащане'
-}
-
 interface UnitRow {
   id: string
   group_id: string
@@ -97,6 +69,11 @@ interface ObligationLine {
   amount_remaining: number
   sort_key: number
   periodName: string | null
+  /** Подредба на периодите (колони в обобщение) — от billing_periods */
+  periodSortOrder: number | null
+  periodDateFrom: string | null
+  /** Период «Отворен» в «Периоди» (!is_closed) — колона в обобщение само ако true */
+  periodIsOpen: boolean | null
 }
 
 function parseMoney(raw: string): number {
@@ -110,6 +87,10 @@ const kindLabels: Record<string, string> = {
   regular: 'Редовно',
   extraordinary: 'Извънредно',
 }
+
+/** Key за редове без период (колона „Стари“) в обобщение по обекти */
+const SUMMARY_NO_PERIOD = '__no_period__'
+const SUMMARY_PERIOD_COL_MIN = 0.005
 
 export default function Obligations() {
   const { canEdit } = useAuth()
@@ -189,7 +170,6 @@ export default function Obligations() {
   }, [])
 
   const fetchObligationLines = useCallback(async () => {
-    if (!canEdit()) return
     setLoadingObligations(true)
     try {
       const { data: rows, error } = await supabaseQuery(() =>
@@ -210,31 +190,58 @@ export default function Obligations() {
       }>
       const periodIds = [...new Set(list.map((r) => r.billing_period_id).filter(Boolean))] as string[]
       const periodNameMap: Record<string, string> = {}
+      const periodMeta: Record<
+        string,
+        { name: string; sort_order: number; date_from: string; is_closed: boolean }
+      > = {}
       if (periodIds.length > 0) {
-        const { data: periods } = await supabase.from('billing_periods').select('id, name').in('id', periodIds)
+        const { data: periods } = await supabase
+          .from('billing_periods')
+          .select('id, name, sort_order, date_from, is_closed')
+          .in('id', periodIds)
         for (const p of periods || []) {
-          const r = p as { id: string; name: string }
+          const r = p as {
+            id: string
+            name: string
+            sort_order: number
+            date_from: string
+            is_closed: boolean
+          }
+          periodMeta[r.id] = {
+            name: r.name,
+            sort_order: typeof r.sort_order === 'number' ? r.sort_order : 0,
+            date_from: r.date_from,
+            is_closed: Boolean(r.is_closed),
+          }
           periodNameMap[r.id] = r.name
         }
       }
-      const enriched: ObligationLine[] = list.map((r) => ({
-        id: r.id,
-        unit_id: r.unit_id,
-        billing_period_id: r.billing_period_id,
-        kind: r.kind,
-        title: r.title,
-        amount_original: typeof r.amount_original === 'string' ? parseFloat(r.amount_original) : Number(r.amount_original),
-        amount_remaining: typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining),
-        sort_key: r.sort_key,
-        periodName: r.billing_period_id ? periodNameMap[r.billing_period_id] ?? null : null,
-      }))
+      const enriched: ObligationLine[] = list.map((r) => {
+        const pm = r.billing_period_id ? periodMeta[r.billing_period_id] : undefined
+        return {
+          id: r.id,
+          unit_id: r.unit_id,
+          billing_period_id: r.billing_period_id,
+          kind: r.kind,
+          title: r.title,
+          amount_original:
+            typeof r.amount_original === 'string' ? parseFloat(r.amount_original) : Number(r.amount_original),
+          amount_remaining:
+            typeof r.amount_remaining === 'string' ? parseFloat(r.amount_remaining) : Number(r.amount_remaining),
+          sort_key: r.sort_key,
+          periodName: r.billing_period_id ? periodNameMap[r.billing_period_id] ?? null : null,
+          periodSortOrder: r.billing_period_id ? (pm?.sort_order ?? 0) : null,
+          periodDateFrom: r.billing_period_id ? (pm?.date_from ?? null) : null,
+          periodIsOpen: r.billing_period_id == null ? null : pm ? !pm.is_closed : false,
+        }
+      })
       setObligationLines(enriched)
     } catch (e) {
       console.error('obligation lines:', e)
     } finally {
       setLoadingObligations(false)
     }
-  }, [canEdit])
+  }, [])
 
   useEffect(() => {
     fetchPayments()
@@ -293,11 +300,12 @@ export default function Obligations() {
         supabase
           .from('units')
           .select('id, group_id, type, number, owner_name, opening_balance, group:group_id (name, code)')
+          .eq('archived', false)
           .order('type')
           .order('number')
       )
       if (error) throw error
-      setUnits((data as unknown as UnitRow[]) || [])
+      setUnits(sortUnitsByTypeAndNumber((data as unknown as UnitRow[]) || []))
     } catch (error) {
       console.error('Error fetching units:', error)
     }
@@ -683,25 +691,90 @@ export default function Obligations() {
     count: filteredPayments.length,
   }
 
-  const unitSummaryRows = (() => {
-    const list =
-      filterUnit === 'all' ? units : units.filter((u) => u.id === filterUnit)
-    return [...list]
+  const { unitSummaryRows, periodOwedColumns, remByUnitByPeriod } = useMemo(() => {
+    const list = filterUnit === 'all' ? units : units.filter((u) => u.id === filterUnit)
+    const sorted = [...list].sort((a, b) => {
+      const ga = a.group?.name ?? labelForCode(a.type)
+      const gb = b.group?.name ?? labelForCode(b.type)
+      const c = ga.localeCompare(gb, 'bg')
+      return c !== 0 ? c : a.number.localeCompare(b.number, 'bg', { numeric: true })
+    })
+    const unitIds = new Set(sorted.map((u) => u.id))
+    const unitSummaryRows = sorted.map((u) => {
+      const agg = oblAggByUnit[u.id]
+      const totalDue = dueByUnit[u.id] ?? agg?.rem ?? 0
+      const totalOrig = agg?.orig ?? 0
+      const totalRem = agg?.rem ?? totalDue
+      const paid = paidByUnit[u.id] ?? 0
+      return { unit: u, totalDue, totalOrig, totalRem, paid }
+    })
+
+    const remBy: Record<string, Record<string, number>> = {}
+    const labelByKey = new Map<string, string>()
+    /** Как в «Периоди» (BillingPeriods): sort_order, после date_from */
+    const orderByPkey = new Map<string, { sortOrder: number; dateFrom: string }>()
+    /** id на период → дали е «Отворен»; колонка в обобщение само ако true */
+    const periodIdOpenForSummary = new Map<string, boolean>()
+
+    for (const o of obligationLines) {
+      if (!unitIds.has(o.unit_id)) continue
+      if (o.billing_period_id && !periodIdOpenForSummary.has(o.billing_period_id)) {
+        periodIdOpenForSummary.set(o.billing_period_id, o.periodIsOpen === true)
+      }
+      const rem =
+        typeof o.amount_remaining === 'string'
+          ? parseFloat(String(o.amount_remaining))
+          : Number(o.amount_remaining)
+      if (!Number.isFinite(rem)) continue
+      const pkey = o.billing_period_id ? `b:${o.billing_period_id}` : SUMMARY_NO_PERIOD
+      if (!remBy[o.unit_id]) remBy[o.unit_id] = {}
+      remBy[o.unit_id][pkey] = (remBy[o.unit_id][pkey] ?? 0) + rem
+      if (pkey !== SUMMARY_NO_PERIOD && o.periodIsOpen && !orderByPkey.has(pkey)) {
+        orderByPkey.set(pkey, {
+          sortOrder: o.periodSortOrder ?? 0,
+          dateFrom: o.periodDateFrom ?? '',
+        })
+      }
+      if (pkey === SUMMARY_NO_PERIOD) {
+        labelByKey.set(pkey, 'Стари')
+      } else {
+        const lab = o.periodName?.trim() || '—'
+        if (!labelByKey.has(pkey) || labelByKey.get(pkey) === '—') {
+          labelByKey.set(pkey, lab)
+        }
+      }
+    }
+    labelByKey.set(SUMMARY_NO_PERIOD, 'Стари')
+
+    const keySet = new Set<string>()
+    for (const uid of unitIds) {
+      for (const k of Object.keys(remBy[uid] ?? {})) {
+        if (k === SUMMARY_NO_PERIOD) {
+          keySet.add(k)
+        } else if (k.startsWith('b:') && periodIdOpenForSummary.get(k.slice(2)) === true) {
+          keySet.add(k)
+        }
+      }
+    }
+    const periodOwedColumns = [...keySet]
+      .filter((k) => {
+        for (const uid of unitIds) {
+          if ((remBy[uid]?.[k] ?? 0) > SUMMARY_PERIOD_COL_MIN) return true
+        }
+        return false
+      })
       .sort((a, b) => {
-        const ga = a.group?.name ?? labelForCode(a.type)
-        const gb = b.group?.name ?? labelForCode(b.type)
-        const c = ga.localeCompare(gb, 'bg')
-        return c !== 0 ? c : a.number.localeCompare(b.number, 'bg', { numeric: true })
+        if (a === SUMMARY_NO_PERIOD) return 1
+        if (b === SUMMARY_NO_PERIOD) return -1
+        const oa = orderByPkey.get(a) ?? { sortOrder: 0, dateFrom: '' }
+        const ob = orderByPkey.get(b) ?? { sortOrder: 0, dateFrom: '' }
+        if (oa.sortOrder !== ob.sortOrder) return oa.sortOrder - ob.sortOrder
+        return oa.dateFrom.localeCompare(ob.dateFrom)
       })
-      .map((u) => {
-        const agg = oblAggByUnit[u.id]
-        const totalDue = dueByUnit[u.id] ?? agg?.rem ?? 0
-        const totalOrig = agg?.orig ?? 0
-        const totalRem = agg?.rem ?? totalDue
-        const paid = paidByUnit[u.id] ?? 0
-        return { unit: u, totalDue, totalOrig, totalRem, paid }
-      })
-  })()
+      .map((k) => ({ key: k, label: labelByKey.get(k) || '—' }))
+
+    return { unitSummaryRows, periodOwedColumns, remByUnitByPeriod: remBy }
+  }, [filterUnit, units, oblAggByUnit, dueByUnit, paidByUnit, obligationLines, labelForCode])
 
   if (loading) {
     return <div>Зареждане...</div>
@@ -752,6 +825,30 @@ export default function Obligations() {
         </div>
       </div>
 
+      <div className="filter-section" id="obligations-filter-anchor">
+        <div className="filter-group">
+          <Filter size={18} />
+          <select
+            value={filterUnit}
+            onChange={(e) => setFilterUnit(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">Всички обекти</option>
+            {sortUnitsByTypeAndNumber(units).map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unitOptionLabel(
+                  { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
+                  labelForCode
+                )}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="payments-count">
+          Показване: {filteredPayments.length} от {payments.length} плащания
+        </div>
+      </div>
+
       <div className="stats-cards obligations-stats-simple">
         <div className="stat-card">
           <div className="stat-label">Обща сума (показани)</div>
@@ -773,6 +870,15 @@ export default function Obligations() {
                   <tr>
                     <th>Обект</th>
                     <th>Група</th>
+                    {periodOwedColumns.map((col) => (
+                      <th
+                        key={col.key}
+                        className="num obligations-summary-period-th"
+                        title="Остатък (неплатено) за отворен период; стари/без период — в „Стари“; затворени периоди нямат колонка"
+                      >
+                        {col.label}
+                      </th>
+                    ))}
                     <th className="num" title="Сума от начислените задължения (лица на редовете)">
                       Дължи (начислено)
                     </th>
@@ -782,7 +888,6 @@ export default function Obligations() {
                     <th className="num" title="Текущо неплатено (остатък по редове)">
                       Остатък
                     </th>
-                    <th>Детайл</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -795,20 +900,24 @@ export default function Obligations() {
                         <div className="unit-owner">{u.owner_name}</div>
                       </td>
                       <td>{u.group?.name ?? '—'}</td>
+                      {periodOwedColumns.map((col) => {
+                        const v = remByUnitByPeriod[u.id]?.[col.key] ?? 0
+                        return (
+                          <td key={col.key} className="num obligations-summary-period-td">
+                            {v > SUMMARY_PERIOD_COL_MIN ? (
+                              <span className={v > 0.009 ? 'balance-owed' : 'balance-ok'}>
+                                {v.toFixed(2)} €
+                              </span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                        )
+                      })}
                       <td className="num">{totalOrig.toFixed(2)} €</td>
                       <td className="num">{paid.toFixed(2)} €</td>
                       <td className="num">
                         <span className={totalRem > 0.009 ? 'balance-owed' : 'balance-ok'}>{totalRem.toFixed(2)} €</span>
-                      </td>
-                      <td>
-                        <Link
-                          to={`/obligations?unit=${u.id}`}
-                          className="obligations-summary-detail-link"
-                          onClick={() => setFilterUnit(u.id)}
-                        >
-                          Плащания
-                          <ChevronRight size={16} aria-hidden />
-                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -817,8 +926,10 @@ export default function Obligations() {
             </div>
             <p className="obligations-period-hint">
               <strong>Дължи</strong> — сума на начислените задължения; <strong>Платено</strong> — сума от плащанията със статус
-              „платено“; <strong>Остатък</strong> — текущо неплатено по редовете. Връзката „Плащания“ задава филтъра по обект
-              към списъка по-долу.
+              „платено“; <strong>Остатък</strong> — текущо неплатено по редовете. <strong>Колонките с период</strong> показват
+              остатъка по съответния период, само ако периодът е <strong>отворен</strong> (как в «Периоди»); за{' '}
+              <strong>затворен</strong> период няма отделна колонка. Стари/без период — в „Стари“ (след «Група»). Скрият се
+              колонки без неплатено по обектите. При много периоди ползвай хоризонталния скрол.
             </p>
           </div>
         )}
@@ -827,33 +938,9 @@ export default function Obligations() {
         )}
         {units.length > 0 && unitSummaryRows.length === 0 && (
           <p className="obligations-period-empty">
-            Няма обекти за показване — провери филтъра „Всички обекти“ по-долу.
+            Няма обекти за показване — провери филтъра „Всички обекти“ по-горе.
           </p>
         )}
-      </div>
-
-      <div className="filter-section" id="obligations-filter-anchor">
-        <div className="filter-group">
-          <Filter size={18} />
-          <select
-            value={filterUnit}
-            onChange={(e) => setFilterUnit(e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">Всички обекти</option>
-            {sortUnitsByTypeAndNumber(units).map((unit) => (
-              <option key={unit.id} value={unit.id}>
-                {unitOptionLabel(
-                  { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
-                  labelForCode
-                )}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="payments-count">
-          Показване: {filteredPayments.length} от {payments.length} записа
-        </div>
       </div>
 
       {canEdit() && (
@@ -958,7 +1045,7 @@ export default function Obligations() {
                       </div>
                     </td>
                     <td>
-                      <div className="income-description">{descriptionLine(payment)}</div>
+                      <div className="income-description">{paymentDescriptionLine(payment)}</div>
                       {payment.payment_method && paymentMethodLabels[payment.payment_method] && (
                         <div className="payment-method-tag">{paymentMethodLabels[payment.payment_method]}</div>
                       )}

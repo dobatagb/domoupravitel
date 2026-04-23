@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { openPublicStorageInNewTab, rawBodyForStorageUpload, sanitizeStorageFileName } from '../lib/storageUpload'
 import { useAuth } from '../contexts/AuthContext'
@@ -34,6 +34,8 @@ const categories = [
 /** Колоната в БД остава за стари данни; новите разходи винаги се записват като equal. */
 const EXPENSE_DISTRIBUTION_LEGACY = 'equal' as const
 
+const EXPENSES_PAGE_SIZE = 15
+
 async function removeStorageObjectAt(path: string | null | undefined) {
   if (!path?.trim()) return
   const { error } = await supabase.storage.from('documents').remove([path])
@@ -59,6 +61,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
   const yearFilter = controlledYear !== undefined ? controlledYear : localYear
 
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -93,6 +96,20 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
   useEffect(() => {
     void fetchExpenses()
   }, [fetchExpenses])
+
+  useEffect(() => {
+    setPage(1)
+  }, [yearFilter])
+
+  const totalPages = Math.max(1, Math.ceil(expenses.length / EXPENSES_PAGE_SIZE))
+  const pagedExpenses = useMemo(() => {
+    const start = (page - 1) * EXPENSES_PAGE_SIZE
+    return expenses.slice(start, start + EXPENSES_PAGE_SIZE)
+  }, [expenses, page])
+
+  useEffect(() => {
+    setPage((p: number) => Math.min(p, totalPages))
+  }, [totalPages, expenses.length])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -317,7 +334,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
                 </td>
               </tr>
             ) : (
-              expenses.map((expense) => (
+              pagedExpenses.map((expense) => (
                 <tr key={expense.id}>
                   <td>{format(new Date(expense.date), 'dd.MM.yyyy', { locale: bg })}</td>
                   <td className={!expense.description?.trim() ? 'expense-desc-empty' : undefined}>
@@ -375,6 +392,40 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
           </tbody>
         </table>
       </div>
+
+      {expenses.length > 0 && totalPages > 1 && (
+        <div
+          className="expenses-pager"
+          role="navigation"
+          aria-label="Страниране на разходи"
+        >
+          <div className="expenses-pager-info">
+            {(page - 1) * EXPENSES_PAGE_SIZE + 1}–
+            {Math.min(page * EXPENSES_PAGE_SIZE, expenses.length)} от {expenses.length}
+          </div>
+          <div className="expenses-pager-actions">
+            <button
+              type="button"
+              className="btn-secondary expenses-pager-btn"
+              disabled={page <= 1}
+              onClick={() => setPage((p: number) => Math.max(1, p - 1))}
+            >
+              Предишна
+            </button>
+            <span className="expenses-pager-page">
+              Страница {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn-secondary expenses-pager-btn"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))}
+            >
+              Следваща
+            </button>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>

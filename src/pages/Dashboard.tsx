@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { Link } from 'react-router-dom'
-import { TrendingUp, TrendingDown, CreditCard, LayoutGrid, Wallet, Landmark } from 'lucide-react'
+import { TrendingUp, TrendingDown, CreditCard, Wallet, Landmark } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
-import { compareUnitNumberStrings, formatUnitNumberDisplay } from '../lib/unitNumber'
+import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 import { useUnitGroups } from '../hooks/useUnitGroups'
+import { paymentDescriptionWithMethod } from '../lib/paymentDescription'
 
 type ViewerBuildingRow = {
   unitId: string
@@ -24,6 +24,8 @@ type ViewerPaymentRow = {
   unitLabel: string
   amount: number
   paymentDate: string | null
+  /** Като в «Задължения»: приспадане / приход / в брой */
+  description: string
 }
 
 export default function Dashboard() {
@@ -54,6 +56,12 @@ export default function Dashboard() {
   const [statsYear, setStatsYear] = useState<FinanceYearScope>(() => new Date().getFullYear())
 
   useEffect(() => {
+    if (isViewer) {
+      setStatsYear(new Date().getFullYear())
+    }
+  }, [isViewer])
+
+  useEffect(() => {
     void fetchStats(statsYear)
   }, [statsYear, isViewer])
 
@@ -82,10 +90,6 @@ export default function Dashboard() {
 
   const fetchStats = async (scope: FinanceYearScope) => {
     try {
-      if (isViewer) {
-        setObligationTotals({ charged: 0, collected: 0, remaining: 0 })
-        setLiquidBalances({ cash: 0, bank: 0 })
-      }
       const { data: paymentsData } = await supabase
         .from('payments')
         .select('amount, payment_date, created_at')
@@ -125,45 +129,53 @@ export default function Dashboard() {
         totalExpenses,
       })
 
-      if (!isViewer) {
-        const [{ data: oblRows, error: oblErr }, { data: settings, error: setErr }] = await Promise.all([
-          supabase.from('unit_obligations').select('amount_original, amount_remaining'),
-          supabase.from('app_settings').select('cash_opening_balance, bank_account_balance').eq('id', 1).maybeSingle(),
-        ])
-        if (!oblErr && oblRows) {
-          let charged = 0
-          let remaining = 0
-          for (const raw of oblRows) {
-            const r = raw as { amount_original: number | string; amount_remaining: number | string }
-            const o = Number(r.amount_original)
-            const rem = Number(r.amount_remaining)
-            charged += Number.isFinite(o) ? o : 0
-            remaining += Number.isFinite(rem) ? rem : 0
+      const [{ data: oblRows, error: oblErr }, { data: settings, error: setErr }] = await Promise.all([
+        supabase
+          .from('unit_obligations')
+          .select('amount_original, amount_remaining, billing_period_id, billing_periods(is_closed)'),
+        supabase.from('app_settings').select('cash_opening_balance, bank_account_balance').eq('id', 1).maybeSingle(),
+      ])
+      if (!oblErr && oblRows) {
+        let charged = 0
+        let remaining = 0
+        for (const raw of oblRows) {
+          const r = raw as {
+            amount_original: number | string
+            amount_remaining: number | string
+            billing_period_id: string | null
+            billing_periods: { is_closed: boolean } | null
           }
-          const collected = Math.round(Math.max(0, charged - remaining) * 100) / 100
-          setObligationTotals({
-            charged,
-            collected,
-            remaining,
-          })
-        } else {
-          setObligationTotals({ charged: 0, collected: 0, remaining: 0 })
+          if (r.billing_period_id) {
+            if (!r.billing_periods || r.billing_periods.is_closed) continue
+          }
+          const o = Number(r.amount_original)
+          const rem = Number(r.amount_remaining)
+          charged += Number.isFinite(o) ? o : 0
+          remaining += Number.isFinite(rem) ? rem : 0
         }
+        const collected = Math.round(Math.max(0, charged - remaining) * 100) / 100
+        setObligationTotals({
+          charged,
+          collected,
+          remaining,
+        })
+      } else {
+        setObligationTotals({ charged: 0, collected: 0, remaining: 0 })
+      }
 
-        if (!setErr && settings) {
-          const s = settings as {
-            cash_opening_balance?: number | string
-            bank_account_balance?: number | string
-          }
-          const cash = Number(s.cash_opening_balance ?? 0)
-          const bank = Number(s.bank_account_balance ?? 0)
-          setLiquidBalances({
-            cash: Number.isFinite(cash) ? cash : 0,
-            bank: Number.isFinite(bank) ? bank : 0,
-          })
-        } else {
-          setLiquidBalances({ cash: 0, bank: 0 })
+      if (!setErr && settings) {
+        const s = settings as {
+          cash_opening_balance?: number | string
+          bank_account_balance?: number | string
         }
+        const cash = Number(s.cash_opening_balance ?? 0)
+        const bank = Number(s.bank_account_balance ?? 0)
+        setLiquidBalances({
+          cash: Number.isFinite(cash) ? cash : 0,
+          bank: Number.isFinite(bank) ? bank : 0,
+        })
+      } else {
+        setLiquidBalances({ cash: 0, bank: 0 })
       }
     } catch (error) {
       console.error('Error fetching stats:', error)
@@ -181,10 +193,18 @@ export default function Dashboard() {
         supabase
           .from('units')
           .select('id, number, floor, type, group:group_id (name)')
+          .eq('archived', false)
           .order('type', { ascending: true })
           .order('number', { ascending: true }),
         loadDueByUnitMap(),
-        supabase.from('payments').select('id, unit_id, amount, payment_date, status').eq('status', 'paid'),
+        supabase
+          .from('payments')
+          .select(
+            `id, unit_id, amount, payment_date, status, notes, payment_method,
+             payment_allocations ( amount, unit_obligations ( title, kind ) ),
+             income:income_id ( type, description, date, period_start, period_end )`
+          )
+          .eq('status', 'paid'),
       ])
 
       const paidByUnit: Record<string, number> = {}
@@ -203,8 +223,7 @@ export default function Dashboard() {
         type: string
         group: { name?: string } | null
       }
-      const unitList = ((units as UnitRow[] | null | undefined) ?? []).slice()
-      unitList.sort((a, b) => compareUnitNumberStrings(String(a.number), String(b.number)))
+      const unitList = sortUnitsByTypeAndNumber((units as UnitRow[] | null | undefined) ?? [])
       const rows: ViewerBuildingRow[] = unitList.map((u) => {
         const ug = u.group?.name ?? labelForCode(u.type)
         const n = formatUnitNumberDisplay(u.number)
@@ -231,6 +250,19 @@ export default function Dashboard() {
         unit_id: string
         amount: number | string
         payment_date: string | null
+        notes: string | null
+        payment_method: string | null
+        payment_allocations: {
+          amount: number | string
+          unit_obligations: { title: string; kind: string } | null
+        }[] | null
+        income: {
+          type: string
+          description: string
+          date: string
+          period_start: string | null
+          period_end: string | null
+        } | null
       }
       const myPayList: ViewerPaymentRow[] = ((pays || []) as PayRow[])
         .filter((p) => linkedIds.has(p.unit_id))
@@ -242,6 +274,14 @@ export default function Dashboard() {
             unitLabel: labelById[row.unit_id] ?? row.unit_id,
             amount: Number.isFinite(amt) ? amt : 0,
             paymentDate: row.payment_date,
+            description: paymentDescriptionWithMethod(
+              {
+                income: row.income,
+                payment_allocations: row.payment_allocations,
+                notes: row.notes,
+              },
+              row.payment_method
+            ),
           }
         })
       myPayList.sort((a, b) => {
@@ -260,24 +300,26 @@ export default function Dashboard() {
   const balance = stats.totalOtherIncome + stats.totalPayments - stats.totalExpenses
 
   return (
-    <div className="dashboard">
-      <h1>Начало</h1>
+    <div className={`dashboard${isViewer ? ' dashboard--viewer-home' : ''}`}>
+      <h1>{isViewer ? 'Табло' : 'Начало'}</h1>
       <p className="dashboard-subtitle">
-        {isViewer ? 'Обобщение за сградата и вашите задължения' : 'Общ преглед на системата'}
+        {isViewer ? 'Преглед на сградата и вашите задължения' : 'Общ преглед на системата'}
       </p>
 
-      <div className="dashboard-year-bar" style={{ marginBottom: '1.25rem' }}>
-        <YearScopeSelect
-          value={statsYear}
-          onChange={setStatsYear}
-          id="dashboard-stats-year"
-        />
-        <span className="dashboard-year-hint" style={{ fontSize: '0.8125rem', color: 'var(--text-light)' }}>
-          {statsYear === 'all'
-            ? 'Показват се всички записи.'
-            : `Филтър по календарна година за плащания (дата на плащане), други приходи (дата), разходи и дата на документ.`}
-        </span>
-      </div>
+      {!isViewer && (
+        <div className="dashboard-year-bar" style={{ marginBottom: '1.25rem' }}>
+          <YearScopeSelect
+            value={statsYear}
+            onChange={setStatsYear}
+            id="dashboard-stats-year"
+          />
+          <span className="dashboard-year-hint" style={{ fontSize: '0.8125rem', color: 'var(--text-light)' }}>
+            {statsYear === 'all'
+              ? 'Показват се всички записи.'
+              : `Филтър по календарна година за плащания (дата на плащане), други приходи (дата), разходи и дата на документ.`}
+          </span>
+        </div>
+      )}
 
       {!isViewer && (
         <div className="dashboard-section dashboard-obligation-snapshot">
@@ -337,30 +379,31 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
-            <TrendingUp size={24} color="var(--success)" />
-          </div>
-          <div className="stat-content">
-            <div className="stat-label">
-              Постъпили плащания{statsYear === 'all' ? '' : ` (${statsYear})`}
+      {!isViewer && (
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-icon" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
+              <TrendingUp size={24} color="var(--success)" />
             </div>
-            <div className="stat-value">{stats.totalPayments.toFixed(2)} €</div>
+            <div className="stat-content">
+              <div className="stat-label">
+                Постъпили плащания{statsYear === 'all' ? '' : ` (${statsYear})`}
+              </div>
+              <div className="stat-value">{stats.totalPayments.toFixed(2)} €</div>
+            </div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-icon" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
+              <TrendingDown size={24} color="var(--danger)" />
+            </div>
+            <div className="stat-content">
+              <div className="stat-label">Разходи{statsYear === 'all' ? '' : ` (${statsYear})`}</div>
+              <div className="stat-value">{stats.totalExpenses.toFixed(2)} €</div>
+            </div>
           </div>
         </div>
-
-        <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
-            <TrendingDown size={24} color="var(--danger)" />
-          </div>
-          <div className="stat-content">
-            <div className="stat-label">Разходи{statsYear === 'all' ? '' : ` (${statsYear})`}</div>
-            <div className="stat-value">{stats.totalExpenses.toFixed(2)} €</div>
-          </div>
-        </div>
-
-      </div>
+      )}
 
       {!isViewer && (
       <div className="balance-card">
@@ -396,41 +439,132 @@ export default function Dashboard() {
       </div>
       )}
 
-      <div className="dashboard-board-link-wrap">
-        <Link to="/obligations-board" className="dashboard-board-link">
-          <LayoutGrid size={18} aria-hidden />
-          Пълно табло по задължения (редовни / извънредни по обекти)
-        </Link>
-      </div>
-
       {isViewer && (
         <>
+          <div className="dashboard-viewer-twin" role="group" aria-label="Обобщение за сградата">
+            <section className="dashboard-viewer-window" aria-labelledby="viewer-bento-a">
+              <h2 id="viewer-bento-a" className="dashboard-viewer-window-title">
+                Текущи Разходи/Приходи
+              </h2>
+              <div
+                className="dashboard-viewer-bento"
+                role="group"
+                aria-label="Текущи задължения, събрано и остатък"
+              >
+                <div className="dashboard-viewer-bento-cell">
+                  <span className="dashboard-viewer-bento-label">Текущи задължения</span>
+                  <span className="dashboard-viewer-bento-value">
+                    {obligationTotals.charged.toFixed(2)} €
+                  </span>
+                </div>
+                <div className="dashboard-viewer-bento-cell">
+                  <span className="dashboard-viewer-bento-label">Събрани</span>
+                  <span className="dashboard-viewer-bento-value">
+                    {obligationTotals.collected.toFixed(2)} €
+                  </span>
+                </div>
+                <div className="dashboard-viewer-bento-cell">
+                  <span className="dashboard-viewer-bento-label">Остават</span>
+                  <span className="dashboard-viewer-bento-value">
+                    {obligationTotals.remaining.toFixed(2)} €
+                  </span>
+                </div>
+              </div>
+            </section>
+            <section className="dashboard-viewer-window" aria-labelledby="viewer-bento-b">
+              <h2 id="viewer-bento-b" className="dashboard-viewer-window-title">
+                Задължения/Налични пари
+              </h2>
+              <div
+                className="dashboard-viewer-bento"
+                role="group"
+                aria-label="Неплатена сума, каса и сметка"
+              >
+                <div className="dashboard-viewer-bento-cell">
+                  <span className="dashboard-viewer-bento-label">Задължения</span>
+                  <span className="dashboard-viewer-bento-value dashboard-viewer-bento-value--debt">
+                    {obligationTotals.remaining.toFixed(2)} €
+                  </span>
+                </div>
+                <div className="dashboard-viewer-bento-cell">
+                  <span className="dashboard-viewer-bento-label">Каса кеш</span>
+                  <span className="dashboard-viewer-bento-value dashboard-viewer-bento-value--cash">
+                    {liquidBalances.cash.toFixed(2)} €
+                  </span>
+                </div>
+                <div className="dashboard-viewer-bento-cell">
+                  <span className="dashboard-viewer-bento-label">Каса онлайн</span>
+                  <span className="dashboard-viewer-bento-value dashboard-viewer-bento-value--cash">
+                    {liquidBalances.bank.toFixed(2)} €
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
+
           <div className="dashboard-viewer-panel">
-            <h2>Вашето задължение (свързани обекти)</h2>
+            <h2>Вашите задължения</h2>
             {viewerSnapshotLoading ? (
               <p className="dashboard-viewer-muted">Зареждане…</p>
             ) : !viewerHasLinkedUnits ? (
-              <p className="dashboard-viewer-muted">
-                Нямате свързани обекти към акаунта. Помолете домоуправителя да ви добави към вашия обект —
-                тогава ще виждате личното си задължение и плащанията си.
+              <p className="dashboard-viewer-muted" style={{ marginBottom: 0 }}>
+                Нямате свързани обекти. Помолете домоуправителя да ви добави към вашия апартамент / обект.
               </p>
             ) : (
-              <div className={`viewer-my-due ${viewerMyDue > 0 ? 'owes' : 'ok'}`}>
+              <div className={`viewer-my-due ${viewerMyDue > 0 ? 'owes' : 'ok'}`} style={{ marginBottom: 0 }}>
                 {viewerMyDue > 0 ? (
                   <>
-                    Дължите общо <strong>{viewerMyDue.toFixed(2)} €</strong> по всички ваши обекти (сумарно
-                    оставащи задължения).
+                    Остатък: <strong>{viewerMyDue.toFixed(2)} €</strong> по всички свързани обекти.
                   </>
                 ) : (
-                  <>По вашите свързани обекти няма остатък по задължения към момента.</>
+                  <>Няма остатък по задължения за вашите обекти.</>
                 )}
               </div>
             )}
           </div>
 
           <div className="dashboard-viewer-panel">
+            <h2>
+              <CreditCard size={20} className="dashboard-inline-icon" aria-hidden />
+              Вашите плащания
+            </h2>
+            {viewerSnapshotLoading ? (
+              <p className="dashboard-viewer-muted">Зареждане…</p>
+            ) : viewerMyPayments.length === 0 ? (
+              <p className="dashboard-viewer-muted">Няма регистрирани плащания по вашите обекти.</p>
+            ) : (
+              <div className="dashboard-table-wrap">
+                <table className="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Дата</th>
+                      <th>Обект</th>
+                      <th>Описание</th>
+                      <th className="num">Сума (€)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewerMyPayments.map((p) => (
+                      <tr key={p.id}>
+                        <td>
+                          {p.paymentDate
+                            ? format(new Date(p.paymentDate), 'dd.MM.yyyy', { locale: bg })
+                            : '—'}
+                        </td>
+                        <td>{p.unitLabel}</td>
+                        <td className="dashboard-payment-desc">{p.description}</td>
+                        <td className="num">{p.amount.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="dashboard-viewer-panel">
             <h2>Справка по обекти (цялата сграда)</h2>
-            <p className="dashboard-viewer-muted">
+            <p className="dashboard-viewer-muted" style={{ marginTop: 0 }}>
               Показват се номер, етаж и суми по задължения — без лични данни за собственици.
             </p>
             {viewerSnapshotLoading ? (
@@ -455,43 +589,6 @@ export default function Dashboard() {
                         <td>{r.floor || '—'}</td>
                         <td className="num">{r.due.toFixed(2)}</td>
                         <td className="num">{r.paid.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="dashboard-viewer-panel">
-            <h2>
-              <CreditCard size={20} className="dashboard-inline-icon" aria-hidden />
-              Вашите плащания
-            </h2>
-            {viewerSnapshotLoading ? (
-              <p className="dashboard-viewer-muted">Зареждане…</p>
-            ) : viewerMyPayments.length === 0 ? (
-              <p className="dashboard-viewer-muted">Няма регистрирани плащания по вашите обекти.</p>
-            ) : (
-              <div className="dashboard-table-wrap">
-                <table className="dashboard-table">
-                  <thead>
-                    <tr>
-                      <th>Дата</th>
-                      <th>Обект</th>
-                      <th className="num">Сума (€)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewerMyPayments.map((p) => (
-                      <tr key={p.id}>
-                        <td>
-                          {p.paymentDate
-                            ? format(new Date(p.paymentDate), 'dd.MM.yyyy', { locale: bg })
-                            : '—'}
-                        </td>
-                        <td>{p.unitLabel}</td>
-                        <td className="num">{p.amount.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>

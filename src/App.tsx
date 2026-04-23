@@ -4,7 +4,6 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Units from './pages/Units'
 import Obligations from './pages/Obligations'
-import ObligationsBoard from './pages/ObligationsBoard'
 import Finances from './pages/Finances'
 import Documents from './pages/Documents'
 import Nomenclatures from './pages/Nomenclatures'
@@ -33,6 +32,22 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** Само администратор; останалите → начална страница */
+function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { userRole, loading } = useAuth()
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
+        <div>Зареждане…</div>
+      </div>
+    )
+  }
+  if (userRole !== 'admin') {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -48,10 +63,31 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="units" element={<Units />} />
         <Route path="obligations" element={<Obligations />} />
-        <Route path="obligations-board" element={<ObligationsBoard />} />
-        <Route path="income" element={<Navigate to="/finances" replace />} />
-        <Route path="expenses" element={<Navigate to="/finances?tab=expenses" replace />} />
-        <Route path="finances" element={<Finances />} />
+        <Route path="obligations-board" element={<Navigate to="/obligations" replace />} />
+        <Route
+          path="income"
+          element={
+            <AdminOnlyRoute>
+              <Navigate to="/finances" replace />
+            </AdminOnlyRoute>
+          }
+        />
+        <Route
+          path="expenses"
+          element={
+            <AdminOnlyRoute>
+              <Navigate to="/finances?tab=expenses" replace />
+            </AdminOnlyRoute>
+          }
+        />
+        <Route
+          path="finances"
+          element={
+            <AdminOnlyRoute>
+              <Finances />
+            </AdminOnlyRoute>
+          }
+        />
         <Route path="documents" element={<Documents />} />
         <Route path="nomenclatures" element={<Nomenclatures />} />
         <Route path="billing-periods" element={<BillingPeriods />} />

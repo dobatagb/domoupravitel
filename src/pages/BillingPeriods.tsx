@@ -95,6 +95,7 @@ export default function BillingPeriods() {
       supabase
         .from('units')
         .select('id, number, group_id, group:group_id(name, code, list_label_short)')
+        .eq('archived', false)
         .order('type', { ascending: true })
         .order('number', { ascending: true })
     )
