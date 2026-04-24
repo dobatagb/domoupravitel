@@ -337,7 +337,7 @@ export default function Dashboard() {
                 <Wallet size={24} color="var(--primary)" />
               </div>
               <div className="stat-content">
-                <div className="stat-label">Кеш</div>
+                <div className="stat-label">В брой</div>
                 <div className="stat-value">{liquidBalances.cash.toFixed(2)} €</div>
               </div>
             </div>
