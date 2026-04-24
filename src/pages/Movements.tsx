@@ -24,6 +24,12 @@ interface MovementRow {
 
 const PAGE_SIZE = 25
 
+const INCOME_TYPE_LABELS: Record<string, string> = {
+  entry_fee: 'Входна такса',
+  parking_fee: 'Паркомясто',
+  other: 'Други приходи',
+}
+
 export default function Movements() {
   const { user, userRole } = useAuth()
   const isAdmin = userRole === 'admin'
@@ -39,29 +45,40 @@ export default function Movements() {
     setLoading(true)
     setError(null)
     try {
-      const [{ data: pays, error: pe }, { data: exps, error: ee }] = await Promise.all([
-        supabaseQuery(() =>
-          supabase
-            .from('payments')
-            .select(
-              `id, amount, payment_date, created_at, created_by, notes, status, payment_method,
+      const [{ data: pays, error: pe }, { data: exps, error: ee }, { data: incomes, error: incomeErr }] =
+        await Promise.all([
+          supabaseQuery(() =>
+            supabase
+              .from('payments')
+              .select(
+                `id, amount, payment_date, created_at, created_by, notes, status, payment_method,
                payment_allocations ( amount, unit_obligations ( title, kind ) ),
                income:income_id ( type, description, date, period_start, period_end ),
                units ( number, group:group_id (name) )`
-            )
-            .order('created_at', { ascending: false })
-            .limit(800)
-        ),
-        supabaseQuery(() =>
-          supabase
-            .from('expenses')
-            .select('id, amount, date, description, category, created_at, created_by')
-            .order('date', { ascending: false })
-            .limit(800)
-        ),
-      ])
+              )
+              .order('created_at', { ascending: false })
+              .limit(800)
+          ),
+          supabaseQuery(() =>
+            supabase
+              .from('expenses')
+              .select('id, amount, date, description, category, created_at, created_by')
+              .order('date', { ascending: false })
+              .limit(800)
+          ),
+          supabaseQuery(() =>
+            supabase
+              .from('income')
+              .select(
+                'id, amount, date, description, type, created_at, received_to, units:unit_id ( number, group:group_id (name) )'
+              )
+              .order('date', { ascending: false })
+              .limit(800)
+          ),
+        ])
       if (pe) throw pe
       if (ee) throw ee
+      if (incomeErr) throw incomeErr
 
       const uidSet = new Set<string>()
       for (const p of pays || []) {
@@ -160,6 +177,43 @@ export default function Movements() {
         })
       }
 
+      for (const raw of incomes || []) {
+        const x = raw as {
+          id: string
+          amount: number
+          date: string
+          description: string
+          type: string
+          created_at: string
+          received_to?: string | null
+          units:
+            | { number: string; group: { name: string } | { name: string }[] | null }
+            | { number: string; group: { name: string } | { name: string }[] | null }[]
+            | null
+            | undefined
+        }
+        const uu = Array.isArray(x.units) ? x.units[0] : x.units
+        const g = uu?.group
+        const gname = Array.isArray(g) ? g[0]?.name : g?.name
+        const unitPart = uu?.number ? (gname ? `${gname} ${uu.number}`.trim() : String(uu.number)) : ''
+        const dateStr = x.date
+        const t = dateStr ? new Date(dateStr).getTime() : 0
+        const typeLab = INCOME_TYPE_LABELS[x.type] ?? x.type
+        const to =
+          (x.received_to ?? 'cash').toString().toLowerCase() === 'bank_transfer' ? 'в сметката' : 'в касата'
+        out.push({
+          id: `i-${x.id}`,
+          kind: 'in',
+          date: dateStr,
+          label: 'Приход',
+          amount: Number(x.amount) || 0,
+          obligationText: `${typeLab}: ${x.description} (${to})`,
+          detail: unitPart || '—',
+          recorderEmail: null,
+          sortTs: t,
+        })
+      }
+
       out.sort((a, b) => b.sortTs - a.sortTs)
       setRows(out)
     } catch (e: unknown) {
@@ -239,8 +293,8 @@ export default function Movements() {
           Движения
         </h1>
         <p className="movements-sub">
-          Обединен преглед на постъпили плащания и разходи. За нови записи колоната „Записал“ се пълни автоматично след
-          миграция 028.
+          Обединен преглед на плащания от «Задължения», <strong>приходи</strong> (други приходи) и разходи. Колоната
+          „Записал“ за плащания/разходи — след миграция 028; приходите нямат поле за записал.
         </p>
       </div>
 

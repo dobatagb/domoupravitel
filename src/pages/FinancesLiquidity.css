@@ -22,6 +22,36 @@
   margin-bottom: 1.5rem;
 }
 
+.fin-liq-reconcile {
+  max-width: 52rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.125rem;
+  background: var(--surface);
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.fin-liq-reconcile-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fin-liq-reconcile-line {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.fin-liq-reconcile-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
 .fin-liq-card {
   display: flex;
   align-items: flex-start;

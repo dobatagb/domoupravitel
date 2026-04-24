@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
+import { fetchLedgerDetail } from '../lib/liquidityLedger'
 import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
 import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 import { useUnitGroups } from '../hooks/useUnitGroups'
@@ -122,12 +123,15 @@ export default function Dashboard() {
 
       const [
         { data: oblRows, error: oblErr },
-        { data: settings, error: setErr },
         { data: nonArchivedUnitRows, error: unitsFilterErr },
+        ledger,
       ] = await Promise.all([
         supabase.from('unit_obligations').select('unit_id, amount_original, amount_remaining'),
-        supabase.from('app_settings').select('cash_opening_balance, bank_account_balance').eq('id', 1).maybeSingle(),
         supabase.from('units').select('id').eq('archived', false),
+        fetchLedgerDetail().catch((e: unknown) => {
+          console.warn('ledger balances:', e)
+          return null
+        }),
       ])
       if (unitsFilterErr) {
         console.warn('Dashboard unit filter (archived):', unitsFilterErr)
@@ -161,17 +165,8 @@ export default function Dashboard() {
         setObligationTotals({ charged: 0, collected: 0, remaining: 0 })
       }
 
-      if (!setErr && settings) {
-        const s = settings as {
-          cash_opening_balance?: number | string
-          bank_account_balance?: number | string
-        }
-        const cash = Number(s.cash_opening_balance ?? 0)
-        const bank = Number(s.bank_account_balance ?? 0)
-        setLiquidBalances({
-          cash: Number.isFinite(cash) ? cash : 0,
-          bank: Number.isFinite(bank) ? bank : 0,
-        })
+      if (ledger) {
+        setLiquidBalances({ cash: ledger.cash, bank: ledger.bank })
       } else {
         setLiquidBalances({ cash: 0, bank: 0 })
       }

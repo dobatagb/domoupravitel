@@ -1,47 +1,50 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Landmark, Wallet } from 'lucide-react'
 import { supabase, supabaseQuery } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { fetchLedgerDetail, type LedgerDetail } from '../lib/liquidityLedger'
 import './FinancesLiquidity.css'
 
-function parseMoney(raw: string): number {
-  const t = raw.trim().replace(',', '.')
-  if (!t) return NaN
-  const n = parseFloat(t)
-  return Number.isFinite(n) ? n : NaN
-}
-
 export default function FinancesLiquidity() {
-  const { canEdit } = useAuth()
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [cash, setCash] = useState(0)
-  const [bank, setBank] = useState(0)
-  const [formCash, setFormCash] = useState('')
-  const [formBank, setFormBank] = useState('')
+  const [ledger, setLedger] = useState<LedgerDetail | null>(null)
+  const [paidOblByMethod, setPaidOblByMethod] = useState({ cash: 0, bank: 0, other: 0 })
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const { data, error: qErr } = await supabaseQuery(() =>
-        supabase.from('app_settings').select('cash_opening_balance, bank_account_balance').eq('id', 1).maybeSingle()
-      )
-      if (qErr) throw qErr
-      const row = data as {
-        cash_opening_balance?: number | string | null
-        bank_account_balance?: number | string | null
-      } | null
-      const c = Number(row?.cash_opening_balance ?? 0)
-      const b = Number(row?.bank_account_balance ?? 0)
-      setCash(Number.isFinite(c) ? c : 0)
-      setBank(Number.isFinite(b) ? b : 0)
-      setFormCash(Number.isFinite(c) ? String(c) : '0')
-      setFormBank(Number.isFinite(b) ? String(b) : '0')
+      const [{ data: payRows, error: payErr }, d] = await Promise.all([
+        supabaseQuery(() => supabase.from('payments').select('amount, payment_method').eq('status', 'paid')),
+        fetchLedgerDetail(),
+      ])
+      if (payErr) {
+        console.warn('FinancesLiquidity: payments for breakdown', payErr)
+        setPaidOblByMethod({ cash: 0, bank: 0, other: 0 })
+      } else {
+        let cashP = 0
+        let bankP = 0
+        let otherP = 0
+        for (const raw of payRows || []) {
+          const p = raw as { amount: number | string; payment_method: string | null }
+          const amt = typeof p.amount === 'string' ? parseFloat(p.amount) : Number(p.amount)
+          if (!Number.isFinite(amt)) continue
+          const m = (p.payment_method ?? '').trim().toLowerCase()
+          if (m === 'cash') cashP += amt
+          else if (m === 'bank_transfer') bankP += amt
+          else otherP += amt
+        }
+        setPaidOblByMethod({
+          cash: Math.round(cashP * 100) / 100,
+          bank: Math.round(bankP * 100) / 100,
+          other: Math.round(otherP * 100) / 100,
+        })
+      }
+      setLedger(d)
     } catch (e: unknown) {
       console.error(e)
       setError(e instanceof Error ? e.message : 'Грешка при зареждане')
+      setLedger(null)
     } finally {
       setLoading(false)
     }
@@ -51,36 +54,8 @@ export default function FinancesLiquidity() {
     void load()
   }, [load])
 
-  const total = cash + bank
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!canEdit()) return
-    const c = parseMoney(formCash)
-    const b = parseMoney(formBank)
-    if (Number.isNaN(c) || Number.isNaN(b)) {
-      setError('Въведи валидни числа за двете полета.')
-      return
-    }
-    setSaving(true)
-    setError(null)
-    try {
-      const { error: uErr } = await supabase
-        .from('app_settings')
-        .update({
-          cash_opening_balance: c,
-          bank_account_balance: b,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 1)
-      if (uErr) throw uErr
-      await load()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Грешка при запис')
-    } finally {
-      setSaving(false)
-    }
-  }
+  const total = (ledger?.cash ?? 0) + (ledger?.bank ?? 0)
+  const p = ledger?.parts
 
   if (loading) {
     return <p className="fin-liq-muted">Зареждане на наличности…</p>
@@ -89,9 +64,12 @@ export default function FinancesLiquidity() {
   return (
     <div className="fin-liq">
       <p className="fin-liq-lead">
-        Наличностите се движат от плащанията в «Задължения», от разходи/приходи с избран източник, и от прехвърлянето
-        по-долу. <strong>Прехвърлянето</strong> създава по един <strong>разход</strong> (намалява източника) и един{' '}
-        <strong>приход</strong> (увеличава целта) — видими в «Разходи» и «Приходи». Миграция 051 в Supabase.
+        <strong>Каса (в брой)</strong> и <strong>сметка</strong> се <strong>изчисляват</strong> от дневника: приходи
+        (таблица «Други приходи» — къде влиза: каса или сметка), <strong>+</strong> плащания от «Задължения» с начин
+        <strong> в брой</strong> / <strong>банков превод</strong>, <strong>−</strong> разходи (от каса / от сметка).
+        Плащания с <strong>карта/друго/без начин</strong> намаляват дълга, но <strong>не</strong> влизат в тези баланси.
+        Няма ръчна корекция в настройките — при нужда въведи <strong>приход</strong> (напр. корекция) в таба «Други
+        приходи».
       </p>
 
       <div className="fin-liq-cards">
@@ -100,8 +78,8 @@ export default function FinancesLiquidity() {
             <Wallet size={26} aria-hidden />
           </div>
           <div className="fin-liq-card-body">
-            <div className="fin-liq-label">Кеш</div>
-            <div className="fin-liq-value">{cash.toFixed(2)} €</div>
+            <div className="fin-liq-label">Каса (в брой)</div>
+            <div className="fin-liq-value">{(ledger?.cash ?? 0).toFixed(2)} €</div>
           </div>
         </div>
         <div className="fin-liq-card">
@@ -110,7 +88,7 @@ export default function FinancesLiquidity() {
           </div>
           <div className="fin-liq-card-body">
             <div className="fin-liq-label">Сметка</div>
-            <div className="fin-liq-value">{bank.toFixed(2)} €</div>
+            <div className="fin-liq-value">{(ledger?.bank ?? 0).toFixed(2)} €</div>
           </div>
         </div>
         <div className="fin-liq-card fin-liq-card-total">
@@ -121,51 +99,40 @@ export default function FinancesLiquidity() {
         </div>
       </div>
 
+      {p && (
+        <div className="fin-liq-reconcile" role="region" aria-label="Салдо по източници">
+          <h3 className="fin-liq-reconcile-title">Салдо: приходи + плащания по задължения − разходи</h3>
+          <p className="fin-liq-reconcile-line">
+            <strong>Каса</strong> = приходи {p.incomeCash.toFixed(2)} € + плащания (в брой) {p.paymentCash.toFixed(2)} € −
+            разходи (от каса) {p.expenseCash.toFixed(2)} € = <strong>{(ledger?.cash ?? 0).toFixed(2)} €</strong>
+          </p>
+          <p className="fin-liq-reconcile-line">
+            <strong>Сметка</strong> = приходи {p.incomeBank.toFixed(2)} € + плащания (банк.) {p.paymentBank.toFixed(2)} € −
+            разходи (от сметка) {p.expenseBank.toFixed(2)} € = <strong>{(ledger?.bank ?? 0).toFixed(2)} €</strong>
+          </p>
+        </div>
+      )}
+
+      <div className="fin-liq-reconcile" role="region" aria-label="Справка плащания">
+        <h3 className="fin-liq-reconcile-title">Справка: плащания «Задължения» (статус „платено“)</h3>
+        <p className="fin-liq-reconcile-line">
+          <strong>В брой</strong>: {paidOblByMethod.cash.toFixed(2)} € — <strong>банков превод</strong>:{' '}
+          {paidOblByMethod.bank.toFixed(2)} € — <strong>друго / карта / без начин</strong>:{' '}
+          {paidOblByMethod.other.toFixed(2)} €
+        </p>
+      </div>
+
       {error && (
         <div className="fin-liq-error" role="alert">
           {error}
         </div>
       )}
 
-      {canEdit() ? (
-        <form className="fin-liq-form" onSubmit={handleSave}>
-          <h3 className="fin-liq-form-title">Корекция на наличности</h3>
-          <div className="fin-liq-form-row">
-            <div className="fin-liq-field">
-              <label htmlFor="fin-liq-cash">Кеш (€)</label>
-              <input
-                id="fin-liq-cash"
-                type="text"
-                inputMode="decimal"
-                value={formCash}
-                onChange={(e) => setFormCash(e.target.value)}
-                autoComplete="off"
-              />
-            </div>
-            <div className="fin-liq-field">
-              <label htmlFor="fin-liq-bank">Сметка (€)</label>
-              <input
-                id="fin-liq-bank"
-                type="text"
-                inputMode="decimal"
-                value={formBank}
-                onChange={(e) => setFormBank(e.target.value)}
-                autoComplete="off"
-              />
-            </div>
-          </div>
-          <div className="fin-liq-form-actions">
-            <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? 'Запис…' : 'Запази'}
-            </button>
-            <button type="button" className="btn-secondary" onClick={() => void load()} disabled={saving}>
-              Презареди
-            </button>
-          </div>
-        </form>
-      ) : (
-        <p className="fin-liq-muted">Корекцията е само за домоуправител (редактор / администратор).</p>
-      )}
+      <p className="fin-liq-muted" style={{ marginTop: 0 }}>
+        <button type="button" className="btn-secondary" onClick={() => void load()}>
+          Презареди
+        </button>
+      </p>
     </div>
   )
 }
