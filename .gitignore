@@ -31,3 +31,6 @@ dist-ssr
 # Supabase
 .supabase
 
+# Локални DB бекъпи (pg_dump) — не комитирай dump файлове
+db_backups/*.dump
+

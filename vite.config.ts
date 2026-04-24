@@ -8,7 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
-      includeAssets: ['pwa-icon.svg', 'pwa-192.png', 'pwa-512.png', 'vite.svg'],
+      includeAssets: ['favicon.svg', 'pwa-icon.svg', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
         id: '/',
         name: 'Домоуправител',

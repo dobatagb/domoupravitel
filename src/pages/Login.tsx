@@ -53,8 +53,8 @@ export default function Login() {
       <div className="login-card">
         <div className="login-header">
           <Building2 size={48} color="var(--primary)" />
-          <h1>Домоуправител</h1>
-          <p>Система за управление на блок</p>
+          <h1>Ален Мак 22</h1>
+          <p>Система за управление</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
