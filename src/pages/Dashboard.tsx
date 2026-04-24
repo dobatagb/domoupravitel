@@ -33,7 +33,7 @@ export default function Dashboard() {
     totalExpenses: 0,
   })
 
-  /** Текущо състояние по редове unit_obligations (без филтър по година). */
+  /** Суми от unit_obligations за неархивирани обекти (като агрегата в «Задължения»), без филтър по година. */
   const [obligationTotals, setObligationTotals] = useState({
     charged: 0,
     collected: 0,
@@ -120,25 +120,32 @@ export default function Dashboard() {
         totalExpenses,
       })
 
-      const [{ data: oblRows, error: oblErr }, { data: settings, error: setErr }] = await Promise.all([
-        supabase
-          .from('unit_obligations')
-          .select('amount_original, amount_remaining, billing_period_id, billing_periods(is_closed)'),
+      const [
+        { data: oblRows, error: oblErr },
+        { data: settings, error: setErr },
+        { data: nonArchivedUnitRows, error: unitsFilterErr },
+      ] = await Promise.all([
+        supabase.from('unit_obligations').select('unit_id, amount_original, amount_remaining'),
         supabase.from('app_settings').select('cash_opening_balance, bank_account_balance').eq('id', 1).maybeSingle(),
+        supabase.from('units').select('id').eq('archived', false),
       ])
+      if (unitsFilterErr) {
+        console.warn('Dashboard unit filter (archived):', unitsFilterErr)
+      }
+      const activeUnitIds =
+        !unitsFilterErr && nonArchivedUnitRows
+          ? new Set((nonArchivedUnitRows as { id: string }[]).map((r) => r.id))
+          : null
       if (!oblErr && oblRows) {
         let charged = 0
         let remaining = 0
         for (const raw of oblRows) {
           const r = raw as {
+            unit_id: string
             amount_original: number | string
             amount_remaining: number | string
-            billing_period_id: string | null
-            billing_periods: { is_closed: boolean } | null
           }
-          if (r.billing_period_id) {
-            if (!r.billing_periods || r.billing_periods.is_closed) continue
-          }
+          if (activeUnitIds && !activeUnitIds.has(r.unit_id)) continue
           const o = Number(r.amount_original)
           const rem = Number(r.amount_remaining)
           charged += Number.isFinite(o) ? o : 0
@@ -303,13 +310,10 @@ export default function Dashboard() {
           <p className="dashboard-section-lead">
             Обобщение по всички редове задължения: неплатената част е сумата, която още не е събрана от собствениците.
           </p>
-          <div className="stats-grid dashboard-triple-stats">
-            <div className="stat-card">
-              <div className="stat-content">
-                <div className="stat-label">Всичко начислено</div>
-                <div className="stat-value">{obligationTotals.charged.toFixed(2)} €</div>
-              </div>
-            </div>
+          <div
+            className="stats-grid"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}
+          >
             <div className="stat-card paid">
               <div className="stat-content">
                 <div className="stat-label">Събрани</div>
@@ -463,7 +467,7 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <div className="dashboard-viewer-bento-cell">
-                  <span className="dashboard-viewer-bento-label">Каса кеш</span>
+                  <span className="dashboard-viewer-bento-label">Каса в брой</span>
                   <span className="dashboard-viewer-bento-value dashboard-viewer-bento-value--cash">
                     {liquidBalances.cash.toFixed(2)} €
                   </span>
@@ -541,13 +545,13 @@ export default function Dashboard() {
           <div className="dashboard-viewer-panel">
             <h2>
               <History size={20} className="dashboard-inline-icon" aria-hidden />
-              Плащания и движения
+              Задължения
             </h2>
             <p className="dashboard-viewer-muted" style={{ marginTop: 0 }}>
-              Пълен хронологичен списък на плащания и разходи по сградата (с филтри) — в «Движения».
+              Списък с всички задължения по сградата (с филтри и периоди) — в раздел «Задължения».
             </p>
-            <Link to="/movements" className="btn-secondary dashboard-viewer-movements-link">
-              Към Движения
+            <Link to="/obligations" className="btn-secondary dashboard-viewer-movements-link">
+              Към Задължения
             </Link>
           </div>
         </>
