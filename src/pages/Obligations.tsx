@@ -810,6 +810,13 @@ export default function Obligations() {
     )
   }, [isViewer, unitSummaryRows, viewerLinkedUnitIds])
 
+  /** Сума на остатък по обекти от текущия филтър — същата логика като колоната «Остатък» в обобщението. */
+  const adminSummaryRemaining = useMemo(() => {
+    if (isViewer) return 0
+    const s = unitSummaryRows.reduce((sum, row) => sum + row.totalRem, 0)
+    return Math.round(s * 100) / 100
+  }, [isViewer, unitSummaryRows])
+
   if (loading) {
     return <div>Зареждане...</div>
   }
@@ -897,7 +904,21 @@ export default function Obligations() {
         <div className="stats-cards obligations-stats-simple">
           <div className="stat-card">
             <div className="stat-label">Обща сума (показани)</div>
+            <div className="obligations-stat-sublabel">Плащания в списъка</div>
             <div className="stat-value">{stats.total.toFixed(2)} €</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Остава за събиране</div>
+            <div className="obligations-stat-sublabel">
+              {filterUnit === 'all' ? 'Всички обекти' : 'Избран обект'}
+            </div>
+            <div
+              className={`stat-value${
+                adminSummaryRemaining > 0.009 ? ' balance-owed' : ' balance-ok'
+              }`}
+            >
+              {adminSummaryRemaining.toFixed(2)} €
+            </div>
           </div>
         </div>
       )}
