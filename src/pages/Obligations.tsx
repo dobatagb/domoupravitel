@@ -904,7 +904,6 @@ export default function Obligations() {
         <div className="stats-cards obligations-stats-simple">
           <div className="stat-card">
             <div className="stat-label">Обща сума (показани)</div>
-            <div className="obligations-stat-sublabel">Плащания в списъка</div>
             <div className="stat-value">{stats.total.toFixed(2)} €</div>
           </div>
           <div className="stat-card">

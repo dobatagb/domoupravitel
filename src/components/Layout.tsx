@@ -221,9 +221,12 @@ export default function Layout() {
           <span>Изход</span>
         </button>
       </aside>
-      <main className="main-content">
-        <Outlet />
-      </main>
+      <div className="layout-main-column">
+        <main className="main-content">
+          <Outlet />
+        </main>
+        <footer className="layout-site-footer">© 2026 ЕС Ален Мак 22</footer>
+      </div>
 
       {settingsOpen && (
         <div

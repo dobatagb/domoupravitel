@@ -57,6 +57,26 @@
   margin-bottom: 0.25rem;
 }
 
+/** Двуредови надписи като в макет «вариянт 1.html» (каса / сметка / фонд ремонт) */
+.stat-label--mock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  line-height: 1.3;
+  margin-bottom: 0.35rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  font-weight: 500;
+}
+.stat-label--mock-sub {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-light);
+  line-height: 1.3;
+}
+
 .stat-value {
   font-size: 1.5rem;
   font-weight: 700;
@@ -337,6 +357,10 @@
   margin-top: 0.65rem;
 }
 
+.dashboard-viewer-bento--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .dashboard-viewer-bento-cell {
   display: flex;
   flex-direction: column;
@@ -358,6 +382,26 @@
   line-height: 1.25;
 }
 
+/** viewer: пари — същите текстове като в макета, без all-caps; два реда */
+.dashboard-viewer-bento-label--mock {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: var(--text-light);
+}
+.dashboard-viewer-bento-label--mock .dashboard-viewer-bento-label-mock-sub {
+  font-size: 0.58rem;
+  font-weight: 500;
+  text-transform: none;
+  color: var(--text-light);
+  opacity: 0.92;
+}
+
 .dashboard-viewer-bento-value {
   font-size: 1.2rem;
   font-weight: 700;
@@ -376,8 +420,17 @@
   font-size: 1.22rem;
 }
 
+@media (max-width: 900px) {
+  .dashboard-viewer-bento--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 480px) {
   .dashboard-viewer-bento {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-viewer-bento--4 {
     grid-template-columns: 1fr;
   }
   .dashboard-viewer-bento-cell + .dashboard-viewer-bento-cell {

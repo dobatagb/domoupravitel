@@ -17,8 +17,15 @@ interface Expense {
   created_at: string
   document_path?: string | null
   document_name?: string | null
-  /** cash = каса, bank_transfer = сметка (след миграция 050) */
-  paid_from?: 'cash' | 'bank_transfer' | null
+  /** cash / bank_transfer / repair_fund (миграция 058) */
+  paid_from?: 'cash' | 'bank_transfer' | 'repair_fund' | null
+}
+
+function expensePaidFromLabel(v: string | null | undefined): string {
+  const x = (v ?? 'cash').toLowerCase()
+  if (x === 'bank_transfer') return 'Сметка'
+  if (x === 'repair_fund') return 'Фонд ремонт'
+  return 'Каса'
 }
 
 const categories = [
@@ -70,7 +77,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
     description: '',
     date: new Date().toISOString().split('T')[0],
     category: '',
-    paid_from: 'cash' as 'cash' | 'bank_transfer',
+    paid_from: 'cash' as 'cash' | 'bank_transfer' | 'repair_fund',
   })
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null)
   const [removeAttachment, setRemoveAttachment] = useState(false)
@@ -217,7 +224,12 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
       description: expense.description,
       date: expense.date.split('T')[0],
       category: expense.category,
-      paid_from: expense.paid_from === 'bank_transfer' ? 'bank_transfer' : 'cash',
+      paid_from:
+        expense.paid_from === 'bank_transfer'
+          ? 'bank_transfer'
+          : expense.paid_from === 'repair_fund'
+            ? 'repair_fund'
+            : 'cash',
     })
     setShowModal(true)
   }
@@ -258,9 +270,9 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
 
   const headerIntro = (
     <>
-      При запис избирате дали разходът е от <strong>каса (в брой)</strong> или от <strong>банкова сметка</strong> — сумата се
-      намалява от съответната наличност в «Финанси» (след миграция 050). Може да прикачите <strong>фактура или документ</strong>{' '}
-      (PDF, снимка).
+      При запис избирате дали разходът е от <strong>каса (в брой)</strong>, <strong>банкова сметка</strong> или{' '}
+      <strong>фонд ремонт</strong> — сумата намалява съответното салдо в «Финанси → Налични пари». Може да прикачите{' '}
+      <strong>фактура или документ</strong> (PDF, снимка).
     </>
   )
 
@@ -343,9 +355,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
                   <td>
                     <span className="category-badge">{expense.category}</span>
                   </td>
-                  <td>
-                    {expense.paid_from === 'bank_transfer' ? 'Сметка' : 'Каса'}
-                  </td>
+                  <td>{expensePaidFromLabel(expense.paid_from)}</td>
                   <td>
                     {expense.document_path ? (
                       <a
@@ -476,12 +486,13 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
                   id="expense-paid-from"
                   value={formData.paid_from}
                   onChange={(e) =>
-                    setFormData({ ...formData, paid_from: e.target.value as 'cash' | 'bank_transfer' })
+                    setFormData({ ...formData, paid_from: e.target.value as 'cash' | 'bank_transfer' | 'repair_fund' })
                   }
                   required
                 >
                   <option value="cash">Каса (в брой)</option>
                   <option value="bank_transfer">Банкова сметка</option>
+                  <option value="repair_fund">Фонд ремонт</option>
                 </select>
               </div>
 

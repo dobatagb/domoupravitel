@@ -19,8 +19,8 @@ export interface IncomeRow {
   period_start: string | null
   period_end: string | null
   created_at: string
-  /** Къде влиза сумата за наличност; след миграция 051 */
-  received_to?: 'cash' | 'bank_transfer' | null
+  /** Къде влиза сумата за наличност; repair_fund — миграция 058 */
+  received_to?: 'cash' | 'bank_transfer' | 'repair_fund' | null
 }
 
 type UnitOpt = {
@@ -41,6 +41,13 @@ function unitLabel(u: UnitOpt): string {
   const g = u.group?.name
   const n = u.number != null ? formatUnitNumberDisplay(u.number) : ''
   return [g, n].filter(Boolean).join(' ') || u.owner_name || '—'
+}
+
+function incomeTargetLabel(v: string | null | undefined): string {
+  const x = (v ?? 'cash').toLowerCase()
+  if (x === 'bank_transfer') return 'Сметка'
+  if (x === 'repair_fund') return 'Фонд ремонт'
+  return 'Каса'
 }
 
 type IncomeRecordsProps = {
@@ -65,7 +72,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
     unit_id: '',
     period_start: '',
     period_end: '',
-    received_to: 'cash' as 'cash' | 'bank_transfer',
+    received_to: 'cash' as 'cash' | 'bank_transfer' | 'repair_fund',
   })
 
   const fetchUnits = useCallback(async () => {
@@ -165,7 +172,12 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
       unit_id: row.unit_id || '',
       period_start: row.period_start?.split('T')[0] || '',
       period_end: row.period_end?.split('T')[0] || '',
-      received_to: row.received_to === 'bank_transfer' ? 'bank_transfer' : 'cash',
+      received_to:
+        row.received_to === 'bank_transfer'
+          ? 'bank_transfer'
+          : row.received_to === 'repair_fund'
+            ? 'repair_fund'
+            : 'cash',
     })
     setShowModal(true)
   }
@@ -245,7 +257,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
                     <span className="income-type-badge">{typeLabels[row.type] ?? row.type}</span>
                   </td>
                   <td>{row.description}</td>
-                  <td>{row.received_to === 'bank_transfer' ? 'Сметка' : 'Каса'}</td>
+                  <td>{incomeTargetLabel(row.received_to)}</td>
                   <td className="income-unit-cell">
                     {row.unit_id ? unitMap[row.unit_id] ?? '—' : '—'}
                   </td>
@@ -314,11 +326,17 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
                 <select
                   id="income-received-to"
                   value={formData.received_to}
-                  onChange={(e) => setFormData({ ...formData, received_to: e.target.value as 'cash' | 'bank_transfer' })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      received_to: e.target.value as 'cash' | 'bank_transfer' | 'repair_fund',
+                    })
+                  }
                   required
                 >
                   <option value="cash">Каса (в брой)</option>
                   <option value="bank_transfer">Банкова сметка</option>
+                  <option value="repair_fund">Фонд ремонт (по закон за ЕС)</option>
                 </select>
               </div>
               <div className="form-group">

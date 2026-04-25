@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { TrendingUp, TrendingDown, CreditCard, Wallet, Landmark, History } from 'lucide-react'
+import { TrendingUp, TrendingDown, CreditCard, Wallet, Landmark, History, Hammer } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Dashboard.css'
@@ -40,7 +40,7 @@ export default function Dashboard() {
     collected: 0,
     remaining: 0,
   })
-  const [liquidBalances, setLiquidBalances] = useState({ cash: 0, bank: 0 })
+  const [liquidBalances, setLiquidBalances] = useState({ cash: 0, bank: 0, repairFund: 0 })
 
   const [viewerMyDue, setViewerMyDue] = useState(0)
   const [viewerMyPayments, setViewerMyPayments] = useState<ViewerPaymentRow[]>([])
@@ -166,9 +166,9 @@ export default function Dashboard() {
       }
 
       if (ledger) {
-        setLiquidBalances({ cash: ledger.cash, bank: ledger.bank })
+        setLiquidBalances({ cash: ledger.cash, bank: ledger.bank, repairFund: ledger.repairFund })
       } else {
-        setLiquidBalances({ cash: 0, bank: 0 })
+        setLiquidBalances({ cash: 0, bank: 0, repairFund: 0 })
       }
     } catch (error) {
       console.error('Error fetching stats:', error)
@@ -281,7 +281,9 @@ export default function Dashboard() {
     <div className={`dashboard${isViewer ? ' dashboard--viewer-home' : ''}`}>
       <h1>{isViewer ? 'Табло' : 'Начало'}</h1>
       <p className="dashboard-subtitle">
-        {isViewer ? 'Преглед на сградата и вашите задължения' : 'Общ преглед на системата'}
+        {isViewer
+          ? 'Преглед на сградата и вашите задължения'
+          : 'Информационно табло на етажната собственост — ЕС Ален Мак 22'}
       </p>
 
       {!isViewer && (
@@ -329,7 +331,8 @@ export default function Dashboard() {
         <div className="dashboard-section dashboard-liquid">
           <h2 className="dashboard-section-title">Налични пари</h2>
           <p className="dashboard-section-lead">
-            Наличност в каса и по банкова сметка (задават се от администратор в настройките на системата).
+            Салдо по каса, банкова сметка и фонд ремонт (по приходи, плащания в «Задължения» и разходи — вж. «Финанси →
+            Налични пари»).
           </p>
           <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
             <div className="stat-card">
@@ -337,7 +340,10 @@ export default function Dashboard() {
                 <Wallet size={24} color="var(--primary)" />
               </div>
               <div className="stat-content">
-                <div className="stat-label">В брой</div>
+                <div className="stat-label stat-label--mock">
+                  Налични средства в касата
+                  <span className="stat-label--mock-sub">(в брой към днешна дата)</span>
+                </div>
                 <div className="stat-value">{liquidBalances.cash.toFixed(2)} €</div>
               </div>
             </div>
@@ -346,8 +352,23 @@ export default function Dashboard() {
                 <Landmark size={24} color="var(--primary)" />
               </div>
               <div className="stat-content">
-                <div className="stat-label">Сметка</div>
+                <div className="stat-label stat-label--mock">
+                  Налични средства по банкова сметка
+                  <span className="stat-label--mock-sub">(актуален баланс)</span>
+                </div>
                 <div className="stat-value">{liquidBalances.bank.toFixed(2)} €</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ backgroundColor: 'rgba(37, 99, 235, 0.15)' }}>
+                <Hammer size={24} color="var(--primary)" />
+              </div>
+              <div className="stat-content">
+                <div className="stat-label stat-label--mock">
+                  Средства във фонд Ремонт
+                  <span className="stat-label--mock-sub">(по закон за ЕС)</span>
+                </div>
+                <div className="stat-value">{liquidBalances.repairFund.toFixed(2)} €</div>
               </div>
             </div>
           </div>
@@ -451,9 +472,9 @@ export default function Dashboard() {
                 Задължения/Налични пари
               </h2>
               <div
-                className="dashboard-viewer-bento"
+                className="dashboard-viewer-bento dashboard-viewer-bento--4"
                 role="group"
-                aria-label="Неплатена сума, каса и сметка"
+                aria-label="Неплатена сума, каса, сметка, фонд ремонт"
               >
                 <div className="dashboard-viewer-bento-cell">
                   <span className="dashboard-viewer-bento-label">Задължения</span>
@@ -462,15 +483,30 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <div className="dashboard-viewer-bento-cell">
-                  <span className="dashboard-viewer-bento-label">Каса в брой</span>
+                  <span className="dashboard-viewer-bento-label dashboard-viewer-bento-label--mock">
+                    Налични средства в касата
+                    <span className="dashboard-viewer-bento-label-mock-sub">(в брой към днешна дата)</span>
+                  </span>
                   <span className="dashboard-viewer-bento-value dashboard-viewer-bento-value--cash">
                     {liquidBalances.cash.toFixed(2)} €
                   </span>
                 </div>
                 <div className="dashboard-viewer-bento-cell">
-                  <span className="dashboard-viewer-bento-label">Каса онлайн</span>
+                  <span className="dashboard-viewer-bento-label dashboard-viewer-bento-label--mock">
+                    Налични средства по банкова сметка
+                    <span className="dashboard-viewer-bento-label-mock-sub">(актуален баланс)</span>
+                  </span>
                   <span className="dashboard-viewer-bento-value dashboard-viewer-bento-value--cash">
                     {liquidBalances.bank.toFixed(2)} €
+                  </span>
+                </div>
+                <div className="dashboard-viewer-bento-cell">
+                  <span className="dashboard-viewer-bento-label dashboard-viewer-bento-label--mock">
+                    Средства във фонд Ремонт
+                    <span className="dashboard-viewer-bento-label-mock-sub">(по закон за ЕС)</span>
+                  </span>
+                  <span className="dashboard-viewer-bento-value dashboard-viewer-bento-value--cash">
+                    {liquidBalances.repairFund.toFixed(2)} €
                   </span>
                 </div>
               </div>

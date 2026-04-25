@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Landmark, Wallet } from 'lucide-react'
+import { Landmark, Wallet, Hammer } from 'lucide-react'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { fetchLedgerDetail, type LedgerDetail } from '../lib/liquidityLedger'
 import './FinancesLiquidity.css'
@@ -54,7 +54,7 @@ export default function FinancesLiquidity() {
     void load()
   }, [load])
 
-  const total = (ledger?.cash ?? 0) + (ledger?.bank ?? 0)
+  const total = (ledger?.cash ?? 0) + (ledger?.bank ?? 0) + (ledger?.repairFund ?? 0)
   const p = ledger?.parts
 
   if (loading) {
@@ -64,12 +64,10 @@ export default function FinancesLiquidity() {
   return (
     <div className="fin-liq">
       <p className="fin-liq-lead">
-        <strong>Каса (в брой)</strong> и <strong>сметка</strong> се <strong>изчисляват</strong> от дневника: приходи
-        (таблица «Други приходи» — къде влиза: каса или сметка), <strong>+</strong> плащания от «Задължения» с начин
-        <strong> в брой</strong> / <strong>банков превод</strong>, <strong>−</strong> разходи (от каса / от сметка).
-        Плащания с <strong>карта/друго/без начин</strong> намаляват дълга, но <strong>не</strong> влизат в тези баланси.
-        Няма ръчна корекция в настройките — при нужда въведи <strong>приход</strong> (напр. корекция) в таба «Други
-        приходи».
+        <strong>Каса (в брой)</strong>, <strong>сметка</strong> и <strong>фонд ремонт</strong> се <strong>изчисляват</strong> от
+        дневника: приходи (къде влиза каса / сметка / фонд), <strong>+</strong> плащания от «Задължения» (само в брой / банков
+        превод) за каса и сметката, <strong>−</strong> разходи. <strong>Фонд ремонт</strong> = приходи към фонда минус
+        разходи от фонда (плащанията от «Задължения» не влизат в него). Плащания с карта/друго/без начин не влизат в каса/сметката.
       </p>
 
       <div className="fin-liq-cards">
@@ -78,7 +76,10 @@ export default function FinancesLiquidity() {
             <Wallet size={26} aria-hidden />
           </div>
           <div className="fin-liq-card-body">
-            <div className="fin-liq-label">Каса (в брой)</div>
+            <div className="fin-liq-label fin-liq-label--mock">
+              Налични средства в касата
+              <span className="fin-liq-label--mock-sub">(в брой към днешна дата)</span>
+            </div>
             <div className="fin-liq-value">{(ledger?.cash ?? 0).toFixed(2)} €</div>
           </div>
         </div>
@@ -87,13 +88,28 @@ export default function FinancesLiquidity() {
             <Landmark size={26} aria-hidden />
           </div>
           <div className="fin-liq-card-body">
-            <div className="fin-liq-label">Сметка</div>
+            <div className="fin-liq-label fin-liq-label--mock">
+              Налични средства по банкова сметка
+              <span className="fin-liq-label--mock-sub">(актуален баланс)</span>
+            </div>
             <div className="fin-liq-value">{(ledger?.bank ?? 0).toFixed(2)} €</div>
+          </div>
+        </div>
+        <div className="fin-liq-card">
+          <div className="fin-liq-card-icon" style={{ background: 'rgba(37, 99, 235, 0.15)' }}>
+            <Hammer size={26} aria-hidden />
+          </div>
+          <div className="fin-liq-card-body">
+            <div className="fin-liq-label fin-liq-label--mock">
+              Средства във фонд Ремонт
+              <span className="fin-liq-label--mock-sub">(по закон за ЕС)</span>
+            </div>
+            <div className="fin-liq-value">{(ledger?.repairFund ?? 0).toFixed(2)} €</div>
           </div>
         </div>
         <div className="fin-liq-card fin-liq-card-total">
           <div className="fin-liq-card-body">
-            <div className="fin-liq-label">Общо налични</div>
+            <div className="fin-liq-label">Общо (трите сметки)</div>
             <div className="fin-liq-value fin-liq-total">{total.toFixed(2)} €</div>
           </div>
         </div>
@@ -101,7 +117,7 @@ export default function FinancesLiquidity() {
 
       {p && (
         <div className="fin-liq-reconcile" role="region" aria-label="Салдо по източници">
-          <h3 className="fin-liq-reconcile-title">Салдо: приходи + плащания по задължения − разходи</h3>
+          <h3 className="fin-liq-reconcile-title">Салдо: приходи + плащания по задължения − разходи (каса/сметка); фонд: приходи − разходи</h3>
           <p className="fin-liq-reconcile-line">
             <strong>Каса</strong> = приходи {p.incomeCash.toFixed(2)} € + плащания (в брой) {p.paymentCash.toFixed(2)} € −
             разходи (от каса) {p.expenseCash.toFixed(2)} € = <strong>{(ledger?.cash ?? 0).toFixed(2)} €</strong>
@@ -109,6 +125,10 @@ export default function FinancesLiquidity() {
           <p className="fin-liq-reconcile-line">
             <strong>Сметка</strong> = приходи {p.incomeBank.toFixed(2)} € + плащания (банк.) {p.paymentBank.toFixed(2)} € −
             разходи (от сметка) {p.expenseBank.toFixed(2)} € = <strong>{(ledger?.bank ?? 0).toFixed(2)} €</strong>
+          </p>
+          <p className="fin-liq-reconcile-line">
+            <strong>Фонд ремонт</strong> = приходи {p.incomeRepair.toFixed(2)} € − разходи (от фонд) {p.expenseRepair.toFixed(2)} €
+            = <strong>{(ledger?.repairFund ?? 0).toFixed(2)} €</strong>
           </p>
         </div>
       )}

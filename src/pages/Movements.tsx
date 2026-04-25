@@ -199,8 +199,9 @@ export default function Movements() {
         const dateStr = x.date
         const t = dateStr ? new Date(dateStr).getTime() : 0
         const typeLab = INCOME_TYPE_LABELS[x.type] ?? x.type
+        const rto = (x.received_to ?? 'cash').toString().toLowerCase()
         const to =
-          (x.received_to ?? 'cash').toString().toLowerCase() === 'bank_transfer' ? 'в сметката' : 'в касата'
+          rto === 'bank_transfer' ? 'в сметката' : rto === 'repair_fund' ? 'във фонд ремонт' : 'в касата'
         out.push({
           id: `i-${x.id}`,
           kind: 'in',
