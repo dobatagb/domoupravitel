@@ -91,6 +91,7 @@ const kindLabels: Record<string, string> = {
 /** Key за редове без период (колона „Стари“) в обобщение по обекти */
 const SUMMARY_NO_PERIOD = '__no_period__'
 const SUMMARY_PERIOD_COL_MIN = 0.005
+const OBL_LINES_PAGE_SIZE = 25
 
 export default function Obligations() {
   const { canEdit, user, userRole } = useAuth()
@@ -140,6 +141,8 @@ export default function Obligations() {
   })
   /** За viewer: unit_id от user_unit_links — за „Вашите задължения — остатък“. */
   const [viewerLinkedUnitIds, setViewerLinkedUnitIds] = useState<Set<string>>(new Set())
+  /** Paging за таблицата «Редове задължения по обекти». */
+  const [oblLinesPage, setOblLinesPage] = useState(1)
 
   const fetchDueByUnitFromDb = async () => {
     try {
@@ -701,6 +704,21 @@ export default function Obligations() {
     (o) => filterUnit === 'all' || o.unit_id === filterUnit
   )
 
+  const oblLinesPageCount = Math.max(1, Math.ceil(filteredObligationLines.length / OBL_LINES_PAGE_SIZE))
+  const oblLinesSafePage = Math.min(oblLinesPage, oblLinesPageCount)
+  const pagedObligationLines = useMemo(
+    () =>
+      filteredObligationLines.slice(
+        (oblLinesSafePage - 1) * OBL_LINES_PAGE_SIZE,
+        oblLinesSafePage * OBL_LINES_PAGE_SIZE
+      ),
+    [filteredObligationLines, oblLinesSafePage]
+  )
+
+  useEffect(() => {
+    setOblLinesPage(1)
+  }, [filterUnit])
+
   const paidByUnit = useMemo(() => {
     const m: Record<string, number> = {}
     for (const p of payments) {
@@ -1006,7 +1024,16 @@ export default function Obligations() {
 
       {canEdit() && (
         <div className="obligations-lines-panel">
-          <h2 className="obligations-lines-heading">Редове задължения по обекти</h2>
+          <div className="obligations-lines-head">
+            <h2 className="obligations-lines-heading">Редове задължения по обекти</h2>
+            {!loadingObligations && filteredObligationLines.length > 0 && (
+              <span className="obligations-lines-count">
+                {filteredObligationLines.length}{' '}
+                {filteredObligationLines.length === 1 ? 'ред' : 'реда'}
+                {oblLinesPageCount > 1 ? ` · стр. ${oblLinesSafePage} / ${oblLinesPageCount}` : ''}
+              </span>
+            )}
+          </div>
           <p className="obligations-lines-hint">
             Редът „Пренесен дълг“ (без период) следва сумата от „Пренесен дълг по обект“; редакция тук обновява и полето в
             обекта. Редакция на други редове; изтриване само ако няма приспадания от плащания. Редовните тарифи от период при
@@ -1017,7 +1044,8 @@ export default function Obligations() {
           ) : filteredObligationLines.length === 0 ? (
             <p className="obligations-period-empty">Няма редове за избрания филтър.</p>
           ) : (
-            <div className="table-wrap obligations-obl-table-wrap">
+            <>
+              <div className="table-wrap obligations-obl-table-wrap">
               <table className="obligations-obl-table">
                 <thead>
                   <tr>
@@ -1031,7 +1059,7 @@ export default function Obligations() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredObligationLines.map((row) => {
+                  {pagedObligationLines.map((row) => {
                     const u = units.find((x) => x.id === row.unit_id)
                     const unitLabel = u ? `${u.group?.name ?? labelForCode(u.type)} ${u.number}`.trim() : '—'
                     const periodCell = row.periodName ?? (row.billing_period_id ? '—' : 'без период')
@@ -1074,11 +1102,36 @@ export default function Obligations() {
                 </tbody>
               </table>
             </div>
+              {oblLinesPageCount > 1 && (
+                <div className="obligations-obl-pager">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={oblLinesSafePage <= 1}
+                    onClick={() => setOblLinesPage((p) => Math.max(1, p - 1))}
+                  >
+                    Назад
+                  </button>
+                  <span className="obligations-obl-pager-info">
+                    {oblLinesSafePage} / {oblLinesPageCount}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={oblLinesSafePage >= oblLinesPageCount}
+                    onClick={() => setOblLinesPage((p) => Math.min(oblLinesPageCount, p + 1))}
+                  >
+                    Напред
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
       <div className="payments-table">
+        <h2 className="obligations-payments-table-title">Плащания</h2>
         {filteredPayments.length === 0 ? (
           <div className="empty-state">Няма записи</div>
         ) : (

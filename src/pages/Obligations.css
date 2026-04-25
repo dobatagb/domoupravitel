@@ -139,11 +139,27 @@
   box-shadow: var(--shadow);
 }
 
+.obligations-lines-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
 .obligations-lines-heading {
   font-size: 1.125rem;
   font-weight: 600;
-  margin: 0 0 0.5rem;
+  margin: 0;
   color: var(--text);
+}
+
+.obligations-lines-count {
+  font-size: 0.875rem;
+  color: var(--text-light);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .obligations-lines-hint {
@@ -182,11 +198,34 @@
   font-variant-numeric: tabular-nums;
 }
 
+.obligations-obl-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.obligations-obl-pager-info {
+  font-size: 0.9rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .payments-table {
   background: var(--surface);
   border-radius: 0.75rem;
   box-shadow: var(--shadow);
   overflow-x: auto;
+}
+
+.obligations-payments-table-title {
+  margin: 0;
+  padding: 1.125rem 1rem 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
 }
 
 .payments-table table {
