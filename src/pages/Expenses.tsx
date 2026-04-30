@@ -6,6 +6,7 @@ import { Plus, Edit2, Trash2, FileText, Paperclip } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import YearScopeSelect, { type FinanceYearScope } from '../components/YearScopeSelect'
+import { EXPENSE_CATEGORY_OPTIONS } from '../lib/expenseCategories'
 import './Expenses.css'
 
 interface Expense {
@@ -27,16 +28,6 @@ function expensePaidFromLabel(v: string | null | undefined): string {
   if (x === 'repair_fund') return 'Фонд ремонт'
   return 'Каса'
 }
-
-const categories = [
-  'Поддръжка и ремонт',
-  'Комунални услуги',
-  'Почистване',
-  'Осигуровки',
-  'Управление',
-  'Вътрешно прехвърляне',
-  'Други',
-]
 
 /** Колоната в БД остава за стари данни; новите разходи винаги се записват като equal. */
 const EXPENSE_DISTRIBUTION_LEGACY = 'equal' as const
@@ -469,7 +460,7 @@ export default function Expenses({ yearScope: controlledYear, embedded = false }
                   required
                 >
                   <option value="">Избери категория</option>
-                  {categories.map((cat) => (
+                  {EXPENSE_CATEGORY_OPTIONS.map((cat) => (
                     <option key={cat} value={cat}>
                       {cat}
                     </option>
