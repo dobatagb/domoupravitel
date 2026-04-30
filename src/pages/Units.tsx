@@ -17,7 +17,8 @@ interface Unit {
   type: string
   number: string
   archived?: boolean
-  area?: number
+  /** % ид. части сграда */
+  building_ideal_share_percent?: number | string | null
   owner_name?: string
   owner_email: string | null
   owner_phone: string | null
@@ -77,6 +78,13 @@ function formatMoneyBg(n: number): string {
   return `${n.toLocaleString('bg-BG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 }
 
+function formatIdealSharePercent(v: number | string | null | undefined): string {
+  if (v == null || v === '') return '—'
+  const n = typeof v === 'string' ? parseFloat(v.replace(',', '.')) : Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return `${n.toLocaleString('bg-BG', { minimumFractionDigits: 3, maximumFractionDigits: 6 })} %`
+}
+
 export default function Units() {
   const { canEdit, userRole, user } = useAuth()
   const isViewer = userRole === 'viewer'
@@ -96,7 +104,7 @@ export default function Units() {
   const [formData, setFormData] = useState({
     group_id: '',
     number: '',
-    area: '',
+    building_ideal_share_percent: '',
     owner_name: '',
     owner_email: '',
     owner_phone: '',
@@ -267,10 +275,10 @@ export default function Units() {
         return
       }
 
-      const areaRaw = formData.area.trim().replace(',', '.')
-      const area = parseFloat(areaRaw)
-      if (Number.isNaN(area) || area <= 0) {
-        alert('Квадратурата трябва да е положително число (напр. 65 или 65,5).')
+      const shareRaw = formData.building_ideal_share_percent.trim().replace(',', '.')
+      const share = parseFloat(shareRaw)
+      if (Number.isNaN(share) || share <= 0 || share > 100) {
+        alert('Полето „% ид. части сграда“ трябва да е между 0 и 100 (напр. 1,952 или 2.5).')
         return
       }
 
@@ -278,7 +286,7 @@ export default function Units() {
         group_id: formData.group_id,
         type: selectedGroup.code,
         number: formData.number,
-        area,
+        building_ideal_share_percent: share,
         owner_name: formData.owner_name,
         owner_email: formData.owner_email || null,
         owner_phone: formData.owner_phone || null,
@@ -325,7 +333,7 @@ export default function Units() {
     setFormData({
       group_id: unit.group_id,
       number: unit.number,
-      area: String(unit.area ?? ''),
+      building_ideal_share_percent: String(unit.building_ideal_share_percent ?? ''),
       owner_name: unit.owner_name ?? '',
       owner_email: unit.owner_email || '',
       owner_phone: unit.owner_phone || '',
@@ -385,7 +393,7 @@ export default function Units() {
     setFormData({
       group_id: defaultGroupId,
       number: '',
-      area: '',
+      building_ideal_share_percent: '',
       owner_name: '',
       owner_email: '',
       owner_phone: '',
@@ -431,7 +439,7 @@ export default function Units() {
           <h1>{isViewer ? 'Мои обекти' : 'Обекти'}</h1>
           <p>
             {isViewer
-              ? 'Пълни данни за свързаните с акаунта обекти (само преглед) — площ, контакти, остатъци по задължения и последните плащания с описание и приспадане като в „Задължения“.'
+              ? 'Пълни данни за свързаните с акаунта обекти (само преглед) — идеални части, контакти, остатъци по задължения и последните плащания с описание и приспадане като в „Задължения“.'
               : 'Управление на апартаменти, гаражи, магазини и паркоместа'}
           </p>
           {canEdit() && (
@@ -524,10 +532,8 @@ export default function Units() {
                         <dd>{d(unit.floor)}</dd>
                       </div>
                       <div>
-                        <dt>Площ (м²)</dt>
-                        <dd>
-                          {unit.area != null && Number.isFinite(Number(unit.area)) ? String(unit.area) : '—'}
-                        </dd>
+                        <dt>% ид. части сграда</dt>
+                        <dd>{formatIdealSharePercent(unit.building_ideal_share_percent)}</dd>
                       </div>
                       <div>
                         <dt>Собственик</dt>
@@ -640,7 +646,7 @@ export default function Units() {
                   <tr>
                     <th>Обект</th>
                     <th>Етаж</th>
-                    <th className="num">м²</th>
+                    <th className="num">% ид. части</th>
                     <th>Собственик</th>
                     <th>Статус</th>
                     {canEdit() && <th>Действия</th>}
@@ -655,7 +661,7 @@ export default function Units() {
                           <strong>{label}</strong>
                         </td>
                         <td>{unit.floor?.trim() || '—'}</td>
-                        <td className="num">{unit.area != null ? String(unit.area) : '—'}</td>
+                        <td className="num">{formatIdealSharePercent(unit.building_ideal_share_percent)}</td>
                         <td>{unit.owner_name ?? '—'}</td>
                         <td>
                           {unit.archived ? (
@@ -764,17 +770,18 @@ export default function Units() {
               </div>
 
               <div className="form-group">
-                <label>Квадратура (м²) *</label>
+                <label>% ид. части сграда *</label>
                 <input
                   type="number"
-                  step="0.01"
-                  value={formData.area}
+                  step="0.001"
+                  value={formData.building_ideal_share_percent}
                   onChange={(e) =>
-                    setFormData({ ...formData, area: e.target.value })
+                    setFormData({ ...formData, building_ideal_share_percent: e.target.value })
                   }
                   required
-                  min="0.01"
-                  placeholder="Напр. 65,5"
+                  min="0.001"
+                  max="100"
+                  placeholder="Напр. 1,952"
                 />
               </div>
 

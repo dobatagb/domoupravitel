@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import './Documents.css'
 import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
+import { useUnitGroups } from '../hooks/useUnitGroups'
 
 export interface DocumentCategoryRow {
   id: string
@@ -36,12 +37,6 @@ type UnitLabel = {
   group: { name: string | null } | null
 }
 
-function unitDisplayLabel(u: UnitLabel): string {
-  const g = u.group?.name
-  const n = u.number != null ? formatUnitNumberDisplay(u.number) : ''
-  return [g, n].filter(Boolean).join(' ') || u.owner_name || u.id.slice(0, 8)
-}
-
 /** PostgREST понякога връща вложения ред като обект или едноелементен масив. */
 function normalizeDocumentRow(raw: Record<string, unknown>): DocumentRow {
   let cat = raw.document_categories
@@ -56,6 +51,7 @@ type CategoryFilter = 'all' | 'none' | string
 
 export default function Documents() {
   const { canEdit } = useAuth()
+  const { labelForCode } = useUnitGroups()
   const [documents, setDocuments] = useState<DocumentRow[]>([])
   const [documentCategories, setDocumentCategories] = useState<DocumentCategoryRow[]>([])
   const [unitLabels, setUnitLabels] = useState<Record<string, string>>({})
@@ -112,12 +108,15 @@ export default function Documents() {
       }
       const { data: urows, error: uerr } = await supabase
         .from('units')
-        .select('id, number, owner_name, group:group_id (name)')
+        .select('id, type, number, owner_name, group:group_id (name)')
         .in('id', unitIds)
       if (uerr) throw uerr
       const map: Record<string, string> = {}
       for (const u of ((urows ?? []) as unknown) as UnitLabel[]) {
-        map[u.id] = unitDisplayLabel(u)
+        map[u.id] =
+          `${u.group?.name ?? labelForCode(u.type ?? '')} ${formatUnitNumberDisplay(u.number)}`.trim() ||
+          u.owner_name ||
+          u.id.slice(0, 8)
       }
       setUnitLabels(map)
     } catch (error) {
@@ -125,7 +124,7 @@ export default function Documents() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [labelForCode])
 
   useEffect(() => {
     void loadPage()
@@ -493,7 +492,7 @@ export default function Documents() {
                   <option value="">Не е свързано с конкретен обект</option>
                   {units.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {unitDisplayLabel(u)}
+                      {`${u.group?.name ?? labelForCode(u.type ?? '')} ${formatUnitNumberDisplay(u.number)}`.trim()}
                     </option>
                   ))}
                 </select>

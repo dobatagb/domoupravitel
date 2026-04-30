@@ -8,6 +8,7 @@ import type { FinanceYearScope } from '../components/YearScopeSelect'
 import './Income.css'
 import './Expenses.css'
 import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
+import { useUnitGroups } from '../hooks/useUnitGroups'
 
 export interface IncomeRow {
   id: string
@@ -37,11 +38,6 @@ const typeLabels: Record<string, string> = {
   other: 'Други',
 }
 
-function unitLabel(u: UnitOpt): string {
-  const g = u.group?.name
-  const n = u.number != null ? formatUnitNumberDisplay(u.number) : ''
-  return [g, n].filter(Boolean).join(' ') || u.owner_name || '—'
-}
 
 function incomeTargetLabel(v: string | null | undefined): string {
   const x = (v ?? 'cash').toLowerCase()
@@ -58,6 +54,15 @@ type IncomeRecordsProps = {
 
 export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
   const { canEdit } = useAuth()
+  const { labelForCode } = useUnitGroups()
+
+  const unitLabel = useCallback(
+    (u: UnitOpt): string =>
+      `${u.group?.name ?? labelForCode(u.type ?? '')} ${formatUnitNumberDisplay(u.number)}`.trim() ||
+      u.owner_name ||
+      '—',
+    [labelForCode]
+  )
   const [rows, setRows] = useState<IncomeRow[]>([])
   const [units, setUnits] = useState<UnitOpt[]>([])
   const [unitMap, setUnitMap] = useState<Record<string, string>>({})
@@ -85,7 +90,7 @@ export function IncomeRecords({ year, embedded = false }: IncomeRecordsProps) {
     const list = sortUnitsByTypeAndNumber(((data ?? []) as unknown) as UnitOpt[])
     setUnits(list)
     setUnitMap(Object.fromEntries(list.map((u) => [u.id, unitLabel(u)])))
-  }, [])
+  }, [unitLabel])
 
   const fetchIncome = useCallback(async () => {
     setLoading(true)

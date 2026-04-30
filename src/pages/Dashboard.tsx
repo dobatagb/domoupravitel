@@ -217,9 +217,8 @@ export default function Dashboard() {
         }
         const unitList = sortUnitsByTypeAndNumber((linkUnits as UnitRow[] | null | undefined) ?? [])
         for (const u of unitList) {
-          const ug = u.group?.name ?? labelForCode(u.type)
-          const n = formatUnitNumberDisplay(u.number)
-          labelById[u.id] = [ug, n].filter(Boolean).join(' ')
+          labelById[u.id] =
+            `${u.group?.name ?? labelForCode(u.type)} ${formatUnitNumberDisplay(u.number)}`.trim()
         }
       }
 

@@ -7,8 +7,7 @@ import { Filter, Edit2, Plus, Trash2, History } from 'lucide-react'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import { useUnitGroups } from '../hooks/useUnitGroups'
-import { sortUnitsByTypeAndNumber } from '../lib/unitNumber'
-import { unitOptionLabel } from '../lib/unitOptionLabel'
+import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
 import {
   paymentDescriptionLine,
   paymentMethodLabels,
@@ -895,10 +894,7 @@ export default function Obligations() {
             <option value="all">Всички обекти</option>
             {sortUnitsByTypeAndNumber(units).map((unit) => (
               <option key={unit.id} value={unit.id}>
-                {unitOptionLabel(
-                  { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
-                  labelForCode
-                )}
+                {`${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`.trim()}
               </option>
             ))}
           </select>
@@ -1228,10 +1224,7 @@ export default function Obligations() {
                     <option value="">— Избери обект —</option>
                     {sortUnitsByTypeAndNumber(units).map((unit) => (
                       <option key={unit.id} value={unit.id}>
-                        {unitOptionLabel(
-                          { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
-                          labelForCode
-                        )}
+                        {`${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`.trim()}
                       </option>
                     ))}
                   </select>
@@ -1289,10 +1282,7 @@ export default function Obligations() {
                     <option value="">— Избери обект —</option>
                     {sortUnitsByTypeAndNumber(units).map((unit) => (
                       <option key={unit.id} value={unit.id}>
-                        {unitOptionLabel(
-                          { groupName: unit.group?.name ?? null, typeCode: unit.type, number: String(unit.number) },
-                          labelForCode
-                        )}
+                        {`${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`.trim()}
                       </option>
                     ))}
                   </select>
