@@ -25,7 +25,7 @@ interface MovementRow {
   /** Разход: категория като в «Добави разход». Постъпление: обект и периоди (от приспадания и/или дати). */
   expenseCategory: string | null
   unitId: string | null
-  /** Празно = неизвестен период за филтъра «Без период». Иначе id от billing_periods. */
+  /** Празно = неизвестен период за филтъра «Стари». Иначе id от billing_periods. */
   billingPeriodIds: string[]
 }
 
@@ -574,7 +574,7 @@ export default function Movements() {
           <>
             <p className="movements-filter-multi-hint">
               За период и обект: маркирай една или повече стойности; празен избор означава „всички“. За редове без
-              съвпадение с период от «Периоди» ползвай „Без период“; приход без обект — „Без обект“.
+              съвпадение с период от «Периоди» ползвай „Стари“; приход без обект — „Без обект“.
             </p>
             <div className="movements-filters-row movements-filters-row--checkboxes">
               <fieldset className="movements-filter-fieldset">
@@ -586,7 +586,7 @@ export default function Movements() {
                       checked={filterPeriodIds.includes(FILTER_NONE_PERIOD)}
                       onChange={() => togglePeriodFilter(FILTER_NONE_PERIOD)}
                     />
-                    Без период
+                    Стари
                   </label>
                   {billingPeriodOptions.map((bp) => (
                     <label key={bp.id} className="movements-filter-checkbox">
