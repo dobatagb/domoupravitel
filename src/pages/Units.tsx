@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { bg } from 'date-fns/locale'
 import { Link } from 'react-router-dom'
@@ -78,11 +78,21 @@ function formatMoneyBg(n: number): string {
   return `${n.toLocaleString('bg-BG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 }
 
+function parseIdealShareNumber(v: number | string | null | undefined): number | null {
+  if (v == null || v === '') return null
+  const n = typeof v === 'string' ? parseFloat(String(v).replace(',', '.')) : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
 function formatIdealSharePercent(v: number | string | null | undefined): string {
   if (v == null || v === '') return '—'
-  const n = typeof v === 'string' ? parseFloat(v.replace(',', '.')) : Number(v)
-  if (!Number.isFinite(n)) return '—'
+  const n = parseIdealShareNumber(v)
+  if (n == null) return '—'
   return `${n.toLocaleString('bg-BG', { minimumFractionDigits: 3, maximumFractionDigits: 6 })} %`
+}
+
+function formatIdealShareSum(total: number): string {
+  return `${total.toLocaleString('bg-BG', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} %`
 }
 
 export default function Units() {
@@ -424,6 +434,20 @@ export default function Units() {
   const safePage = Math.min(page, pageCount)
   const pagedUnits = sortedList.slice((safePage - 1) * UNITS_PAGE_SIZE, safePage * UNITS_PAGE_SIZE)
 
+  /** Сума на % ид. части по текущия филтър (активни/архивирани, група). */
+  const idealShareSumListed = useMemo(() => {
+    let s = 0
+    let any = false
+    for (const u of sortedList) {
+      const n = parseIdealShareNumber(u.building_ideal_share_percent)
+      if (n != null) {
+        s += n
+        any = true
+      }
+    }
+    return any ? s : null
+  }, [sortedList])
+
   useEffect(() => {
     setPage(1)
   }, [filterGroupId, showArchived, isViewer])
@@ -486,6 +510,9 @@ export default function Units() {
           </div>
           <div className="units-count">
             {sortedList.length} обекта
+            {idealShareSumListed != null && (
+              <> · Сума ид. части: {formatIdealShareSum(idealShareSumListed)}</>
+            )}
             {pageCount > 1 ? ` · стр. ${safePage}/${pageCount}` : ''}
           </div>
         </div>
@@ -494,6 +521,9 @@ export default function Units() {
       {isViewer && sortedList.length > 0 && (
         <div className="viewer-units-count">
           {sortedList.length} {sortedList.length === 1 ? 'обект' : 'обекта'}
+          {idealShareSumListed != null && (
+            <> · Сума ид. части: {formatIdealShareSum(idealShareSumListed)}</>
+          )}
           {pageCount > 1 ? ` · стр. ${safePage}/${pageCount}` : ''}
         </div>
       )}
