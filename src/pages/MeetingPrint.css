@@ -1,0 +1,244 @@
+/* Печатна версия на събрание — използва браузърния dialog за PDF. */
+
+.meeting-print {
+  max-width: 60rem;
+  margin: 2rem auto;
+  padding: 1.5rem 2rem 3rem;
+  background: #fff;
+  color: #111;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.meeting-print-loading {
+  text-align: center;
+  margin: 4rem auto;
+  font-size: 1.05rem;
+  color: #555;
+}
+
+.meeting-print-actions {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding: 0.5rem 0;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+}
+
+.meeting-print-actions button {
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  border-radius: 0.4rem;
+  border: 1px solid #999;
+  background: #f4f4f5;
+  cursor: pointer;
+}
+
+.meeting-print-actions button:hover {
+  background: #e5e7eb;
+}
+
+.meeting-print-header {
+  margin: 1.25rem 0 2rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 2px solid #111;
+}
+
+.meeting-print-eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #555;
+  font-weight: 700;
+}
+
+.meeting-print-header h1 {
+  margin: 0.25rem 0 1rem;
+  font-size: 1.6rem;
+  line-height: 1.25;
+}
+
+.meeting-print-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.4rem 1.5rem;
+  font-size: 0.85rem;
+}
+
+.meeting-print-meta-grid > div {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.meeting-print-meta-grid span {
+  color: #555;
+}
+
+.meeting-print-meta-grid strong {
+  font-weight: 600;
+  color: #111;
+}
+
+.meeting-print-section {
+  margin: 1.5rem 0;
+}
+
+.meeting-print-section h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.65rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #999;
+}
+
+.meeting-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.meeting-print-table th,
+.meeting-print-table td {
+  border: 1px solid #ccc;
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.meeting-print-table th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+.meeting-print-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.meeting-print-agenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.meeting-print-agenda-item {
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid #ddd;
+  page-break-inside: avoid;
+}
+
+.meeting-print-agenda-item h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+
+.meeting-print-agenda-desc {
+  margin: 0 0 0.45rem;
+  color: #444;
+  white-space: pre-line;
+}
+
+.meeting-print-agenda-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  font-size: 0.83rem;
+  margin-bottom: 0.4rem;
+}
+
+.meeting-print-decision {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.3rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.meeting-print-decision.is-passed {
+  color: #14532d;
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.meeting-print-decision.is-rejected {
+  color: #7f1d1d;
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.meeting-print-decision.is-pending {
+  color: #555;
+  background: #f3f4f6;
+}
+
+.meeting-print-notes {
+  white-space: pre-line;
+  border: 1px solid #ccc;
+  padding: 0.75rem 1rem;
+  border-radius: 0.3rem;
+  background: #fafafa;
+}
+
+.meeting-print-signatures {
+  margin-top: 3rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  page-break-inside: avoid;
+}
+
+.meeting-print-signature {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #444;
+}
+
+.meeting-print-signature-line {
+  height: 2rem;
+  border-bottom: 1px solid #111;
+  margin-bottom: 0.3rem;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .meeting-print {
+    margin: 0;
+    padding: 0;
+    max-width: none;
+    font-size: 0.85rem;
+  }
+  .meeting-print-actions {
+    display: none !important;
+  }
+  .meeting-print-header h1 {
+    font-size: 1.35rem;
+  }
+  .meeting-print-section {
+    margin: 1rem 0;
+  }
+  .meeting-print-section h2 {
+    font-size: 1rem;
+  }
+  /* Скрий главния layout chrome (sidebar, header) */
+  .layout-sidebar,
+  .layout-mobile-header,
+  .layout-overlay,
+  nav.meetings-subnav {
+    display: none !important;
+  }
+  .meeting-print-table {
+    page-break-inside: auto;
+  }
+  .meeting-print-table tr {
+    page-break-inside: avoid;
+  }
+}
+
+@page {
+  size: A4;
+  margin: 1.5cm;
+}

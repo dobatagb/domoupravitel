@@ -44,7 +44,7 @@ export async function supabaseQuery<R extends SupabaseQueryResult>(
   return Promise.resolve(run())
 }
 
-export type UserRole = 'admin' | 'editor' | 'viewer'
+export type UserRole = 'admin' | 'viewer'
 
 export interface User {
   id: string

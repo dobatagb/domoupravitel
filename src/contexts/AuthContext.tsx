@@ -172,12 +172,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const role = data?.role as UserRole | undefined
-      if (role === 'admin' || role === 'editor' || role === 'viewer') {
+      const raw = data?.role as string | undefined
+      const role =
+        raw === 'editor'
+          ? 'admin'
+          : raw === 'admin' || raw === 'viewer'
+            ? raw
+            : undefined
+      if (role === 'admin' || role === 'viewer') {
         console.log('User role found:', role)
         setUserRole(role)
-      } else if (role) {
-        console.warn('Unknown role value, defaulting to viewer:', role)
+      } else if (raw) {
+        console.warn('Unknown role value, defaulting to viewer:', raw)
         setUserRole('viewer')
       } else {
         console.warn('User record not found in public.users, using viewer')
@@ -279,7 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const canEdit = () => {
-    return userRole === 'admin' || userRole === 'editor'
+    return userRole === 'admin'
   }
 
   const refreshUserRole = async () => {
@@ -304,8 +310,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       if (data?.role) {
-        console.log('Setting user role to:', data.role)
-        setUserRole(data.role)
+        const raw = data.role as string
+        const normalized: UserRole =
+          raw === 'editor' ? 'admin' : raw === 'admin' || raw === 'viewer' ? raw : 'viewer'
+        console.log('Setting user role to:', normalized)
+        setUserRole(normalized)
         setLoading(false)
       } else {
         console.warn('User role not found, keeping current role')

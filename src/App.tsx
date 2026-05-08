@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { ConfirmDialogProvider } from './components/ConfirmDialog'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Units from './pages/Units'
@@ -12,6 +13,8 @@ import Movements from './pages/Movements'
 import UserManagement from './pages/UserManagement'
 import Announcements from './pages/Announcements'
 import ParkingLottery from './pages/ParkingLottery'
+import Meetings from './pages/Meetings'
+import MeetingPrint from './pages/MeetingPrint'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -52,6 +55,14 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route
+        path="/meetings/:meetingId/print"
+        element={
+          <ProtectedRoute>
+            <MeetingPrint />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/"
         element={
@@ -94,6 +105,8 @@ function AppRoutes() {
         <Route path="movements" element={<Movements />} />
         <Route path="users" element={<UserManagement />} />
         <Route path="announcements" element={<Announcements />} />
+        <Route path="meetings/:meetingId" element={<Meetings />} />
+        <Route path="meetings" element={<Meetings />} />
         <Route path="parking-lottery" element={<ParkingLottery />} />
       </Route>
     </Routes>
@@ -103,9 +116,11 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
+      <ConfirmDialogProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </ConfirmDialogProvider>
     </AuthProvider>
   )
 }

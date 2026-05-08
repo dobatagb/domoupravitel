@@ -137,7 +137,7 @@ export default function Nomenclatures() {
         console.error('unit_groups insert:', error)
         alert(
           error.message ||
-            'Грешка при запис. Провери дали си логнат като admin/editor и дали миграциите за `unit_groups` са приложени.'
+            'Грешка при запис. Провери дали си логнат като администратор и дали миграциите за `unit_groups` са приложени.'
         )
         return
       }

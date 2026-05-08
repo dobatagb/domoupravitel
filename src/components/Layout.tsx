@@ -9,6 +9,7 @@ import {
   CreditCard,
   Tags,
   CalendarRange,
+  Calendar,
   Users,
   History,
   Download,
@@ -20,11 +21,13 @@ import {
   Wallet,
 } from 'lucide-react'
 import { usePwaInstall } from '../hooks/usePwaInstall'
+import { NotificationsProvider } from '../contexts/NotificationsContext'
+import NotificationBell from './NotificationBell'
 import './Layout.css'
 
 const MIN_PASSWORD_LEN = 6
 
-export default function Layout() {
+function LayoutInner() {
   const { signOut, user, userRole, updatePassword } = useAuth()
   const location = useLocation()
   const { canUseNativePrompt, promptInstall, showIosAddToHomeHint } = usePwaInstall()
@@ -105,6 +108,7 @@ export default function Layout() {
       ? [
           { path: '/', label: 'Начало', icon: Home },
           { path: '/announcements', label: 'Съобщения', icon: Megaphone },
+          { path: '/meetings', label: 'Събрания', icon: Calendar },
           { path: '/units', label: 'Мои обекти', icon: Building2 },
           { path: '/obligations', label: 'Задължения', icon: CreditCard },
           { path: '/movements', label: 'Движения', icon: History },
@@ -114,6 +118,7 @@ export default function Layout() {
       : [
           { path: '/', label: 'Начало', icon: Home },
           { path: '/announcements', label: 'Съобщения', icon: Megaphone },
+          { path: '/meetings', label: 'Събрания', icon: Calendar },
           { path: '/units', label: 'Обекти', icon: Building2 },
           { path: '/users', label: 'Потребители', icon: Users },
           { path: '/obligations', label: 'Задължения', icon: CreditCard },
@@ -139,6 +144,7 @@ export default function Layout() {
           {mobileMenuOpen ? <X size={22} strokeWidth={2.25} aria-hidden /> : <Menu size={22} strokeWidth={2.25} aria-hidden />}
         </button>
         <span className="layout-mobile-title">Домоуправител</span>
+        <NotificationBell className="layout-mobile-bell" align="right" />
       </header>
 
       {mobileMenuOpen && (
@@ -158,6 +164,7 @@ export default function Layout() {
               <div className="user-email" title={user?.email ?? undefined}>
                 {user?.email}
               </div>
+              <NotificationBell className="layout-sidebar-bell" align="left" />
               <button
                 type="button"
                 className="user-settings-btn"
@@ -171,7 +178,7 @@ export default function Layout() {
                 <Settings size={18} aria-hidden />
               </button>
             </div>
-            <div className="user-role">{userRole === 'admin' ? 'Администратор' : userRole === 'editor' ? 'Редактор' : 'Преглед'}</div>
+            <div className="user-role">{userRole === 'admin' ? 'Администратор' : 'Преглед'}</div>
           </div>
           {canUseNativePrompt && (
             <button
@@ -286,6 +293,14 @@ export default function Layout() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function Layout() {
+  return (
+    <NotificationsProvider>
+      <LayoutInner />
+    </NotificationsProvider>
   )
 }
 

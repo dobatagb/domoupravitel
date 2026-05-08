@@ -70,6 +70,27 @@
   color: var(--primary);
 }
 
+/* Bell в sidebar — на десктоп показваме, на мобилно крием (там е в mobile header). */
+.layout-sidebar-bell {
+  flex-shrink: 0;
+}
+
+/* Bell в mobile header — показваме само на мобилно. */
+.layout-mobile-bell {
+  display: none;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .layout-sidebar-bell {
+    display: none;
+  }
+  .layout-mobile-bell {
+    display: inline-flex;
+  }
+}
+
 .user-role {
   color: var(--text-light);
   font-size: 0.75rem;

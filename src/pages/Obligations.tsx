@@ -257,7 +257,7 @@ export default function Obligations() {
   // Линкнати обекти: ползваме userRole, не isViewer, защото userRole първо е null — isViewer кратко е false и нулеше Set-а;
   // при кратък null около refresh на ролята също падахме на 0 € след коректен остатък.
   useEffect(() => {
-    if (userRole === 'admin' || userRole === 'editor') {
+    if (userRole === 'admin') {
       setViewerLinkedUnitIds(new Set())
       return
     }
@@ -281,13 +281,27 @@ export default function Obligations() {
     void fetchOblAggByUnit()
   }, [fetchOblAggByUnit])
 
+  /** Обекти с поне един ред задължение — показват се във филтъра и «Обобщение по обекти». */
+  const unitsWithObligations = useMemo(() => {
+    const ids = new Set(obligationLines.map((o) => o.unit_id))
+    return units.filter((u) => ids.has(u.id))
+  }, [units, obligationLines])
+
   useEffect(() => {
     const uid = searchParams.get('unit')
-    if (!uid || units.length === 0) return
-    if (units.some((u) => u.id === uid)) {
+    if (!uid || unitsWithObligations.length === 0) return
+    if (unitsWithObligations.some((u) => u.id === uid)) {
       setFilterUnit(uid)
     }
-  }, [searchParams, units])
+  }, [searchParams, unitsWithObligations])
+
+  /** Ако избраният обект вече няма редове задължение — връщаме към «Всички». */
+  useEffect(() => {
+    if (filterUnit === 'all') return
+    if (!unitsWithObligations.some((u) => u.id === filterUnit)) {
+      setFilterUnit('all')
+    }
+  }, [filterUnit, unitsWithObligations])
 
   useEffect(() => {
     void fetchObligationLines()
@@ -734,7 +748,10 @@ export default function Obligations() {
   }
 
   const { unitSummaryRows, periodOwedColumns, remByUnitByPeriod } = useMemo(() => {
-    const list = filterUnit === 'all' ? units : units.filter((u) => u.id === filterUnit)
+    const list =
+      filterUnit === 'all'
+        ? unitsWithObligations
+        : unitsWithObligations.filter((u) => u.id === filterUnit)
     const sorted = [...list].sort((a, b) => {
       const ga = a.group?.name ?? labelForCode(a.type)
       const gb = b.group?.name ?? labelForCode(b.type)
@@ -816,7 +833,15 @@ export default function Obligations() {
       .map((k) => ({ key: k, label: labelByKey.get(k) || '—' }))
 
     return { unitSummaryRows, periodOwedColumns, remByUnitByPeriod: remBy }
-  }, [filterUnit, units, oblAggByUnit, dueByUnit, paidByUnit, obligationLines, labelForCode])
+  }, [
+    filterUnit,
+    unitsWithObligations,
+    oblAggByUnit,
+    dueByUnit,
+    paidByUnit,
+    obligationLines,
+    labelForCode,
+  ])
 
   /** Същият остатък като в таблицата «Обобщение по обекти» за свързаните с акаунта unit_id. */
   const viewerOwingTotal = useMemo(() => {
@@ -891,8 +916,8 @@ export default function Obligations() {
             onChange={(e) => setFilterUnit(e.target.value)}
             className="filter-select"
           >
-            <option value="all">Всички обекти</option>
-            {sortUnitsByTypeAndNumber(units).map((unit) => (
+            <option value="all">Всички обекти (със задължения)</option>
+            {sortUnitsByTypeAndNumber(unitsWithObligations).map((unit) => (
               <option key={unit.id} value={unit.id}>
                 {`${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`.trim()}
               </option>
@@ -937,7 +962,7 @@ export default function Obligations() {
       )}
 
       <div className="obligations-period-panel">
-        {units.length > 0 && unitSummaryRows.length > 0 && (
+        {unitsWithObligations.length > 0 && unitSummaryRows.length > 0 && (
           <div className="obligations-unit-summary">
             <h2 className="obligations-summary-heading">Обобщение по обекти</h2>
             <div className="table-wrap obligations-summary-table-wrap">
@@ -1011,9 +1036,17 @@ export default function Obligations() {
         {units.length === 0 && (
           <p className="obligations-period-empty">Няма регистрирани обекти.</p>
         )}
-        {units.length > 0 && unitSummaryRows.length === 0 && (
+        {units.length > 0 &&
+          unitsWithObligations.length === 0 &&
+          !loadingObligations && (
+            <p className="obligations-period-empty">
+              Няма записани задължения по обекти. Добавете ред в таблицата по-долу или „Пренесен дълг по обект“ — тогава
+              обектът ще се появи тук и във филтъра.
+            </p>
+          )}
+        {unitsWithObligations.length > 0 && unitSummaryRows.length === 0 && (
           <p className="obligations-period-empty">
-            Няма обекти за показване — провери филтъра „Всички обекти“ по-горе.
+            Няма обекти за показване — провери филтъра по-горе.
           </p>
         )}
       </div>

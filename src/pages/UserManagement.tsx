@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { Users, Plus, Link2, Trash2, KeyRound } from 'lucide-react'
@@ -7,7 +7,11 @@ import bg from 'date-fns/locale/bg'
 import type { UserRole } from '../lib/supabase'
 import './Units.css'
 import './UserManagement.css'
-import { formatUnitNumberDisplay, sortUnitsByTypeAndNumber } from '../lib/unitNumber'
+import {
+  compareUnitNumberStrings,
+  formatUnitNumberDisplay,
+  sortUnitsByTypeAndNumber,
+} from '../lib/unitNumber'
 
 type AppUser = {
   id: string
@@ -97,9 +101,30 @@ export default function UserManagement() {
 
   const unitsSummary = (userId: string) => {
     const ids = new Set(linksForUser(userId).map((l) => l.unit_id))
-    const list = units.filter((u) => ids.has(u.id)).map(unitLabel)
+    const list = sortUnitsByTypeAndNumber(units.filter((u) => ids.has(u.id))).map(unitLabel)
     return list.length ? list.join(', ') : '—'
   }
+
+  /** Ред на потребителите: по първи свързан обект (тип + номер), после имейл. */
+  const usersSortedByUnits = useMemo(() => {
+    const firstLinkedUnit = (userId: string): UnitRow | null => {
+      const ids = new Set(links.filter((l) => l.user_id === userId).map((l) => l.unit_id))
+      const sub = sortUnitsByTypeAndNumber(units.filter((u) => ids.has(u.id)))
+      return sub[0] ?? null
+    }
+    return [...users].sort((a, b) => {
+      const ua = firstLinkedUnit(a.id)
+      const ub = firstLinkedUnit(b.id)
+      if (!ua && !ub) return a.email.localeCompare(b.email, 'bg')
+      if (!ua) return 1
+      if (!ub) return -1
+      const tc = String(ua.type ?? '').localeCompare(String(ub.type ?? ''), 'bg')
+      if (tc !== 0) return tc
+      const nc = compareUnitNumberStrings(String(ua.number ?? ''), String(ub.number ?? ''))
+      if (nc !== 0) return nc
+      return a.email.localeCompare(b.email, 'bg')
+    })
+  }, [users, units, links])
 
   const openAssign = (u: AppUser) => {
     const set = new Set(linksForUser(u.id).map((l) => l.unit_id))
@@ -398,18 +423,17 @@ export default function UserManagement() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {usersSortedByUnits.map((u) => (
               <tr key={u.id}>
                 <td>{u.email}</td>
                 <td>
                   {userRole === 'admin' ? (
                     <select
                       className="role-select"
-                      value={u.role}
+                      value={u.role === 'editor' ? 'admin' : u.role}
                       onChange={(e) => void handleRoleChange(u.id, e.target.value as UserRole)}
                     >
                       <option value="viewer">Преглед</option>
-                      <option value="editor">Редактор</option>
                       <option value="admin">Администратор</option>
                     </select>
                   ) : (
