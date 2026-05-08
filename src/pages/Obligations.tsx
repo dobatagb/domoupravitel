@@ -916,7 +916,7 @@ export default function Obligations() {
             onChange={(e) => setFilterUnit(e.target.value)}
             className="filter-select"
           >
-            <option value="all">Всички обекти (със задължения)</option>
+            <option value="all">Обекти</option>
             {sortUnitsByTypeAndNumber(unitsWithObligations).map((unit) => (
               <option key={unit.id} value={unit.id}>
                 {`${unit.group?.name ?? labelForCode(unit.type)} ${formatUnitNumberDisplay(unit.number)}`.trim()}
@@ -948,7 +948,7 @@ export default function Obligations() {
           <div className="stat-card">
             <div className="stat-label">Остава за събиране</div>
             <div className="obligations-stat-sublabel">
-              {filterUnit === 'all' ? 'Всички обекти' : 'Избран обект'}
+              {filterUnit === 'all' ? 'Обекти' : 'Избран обект'}
             </div>
             <div
               className={`stat-value${
@@ -980,7 +980,7 @@ export default function Obligations() {
                       </th>
                     ))}
                     <th className="num" title="Сума от начислените задължения (лица на редовете)">
-                      Дължи (начислено)
+                      Начислено
                     </th>
                     <th className="num" title="Сума от записите със статус „платено“">
                       Платено
@@ -1024,7 +1024,7 @@ export default function Obligations() {
               </table>
             </div>
             <p className="obligations-period-hint">
-              <strong>Дължи</strong> — сума на начислените задължения; <strong>Платено</strong> — сума от <em>всички</em> плащания
+              <strong>Начислено</strong> — сума на начислените задължения; <strong>Платено</strong> — сума от <em>всички</em> плащания
               със статус „платено“ (всички начини); <strong>Остатък</strong> — текущо неплатено по редовете. Само плащанията,
               отчетени „в брой“ / банков превод, влизат в каса/смета в «Финанси → Налични пари». <strong>Колонките с период</strong>{' '}
               показват остатъка по съответния период, само ако е <strong>отворен</strong> (как в «Периоди»); за <strong>затворен</strong>{' '}

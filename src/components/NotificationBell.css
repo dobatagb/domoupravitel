@@ -59,11 +59,18 @@
   overflow: hidden;
 }
 
-.notif-bell--align-right .notif-bell-panel {
+/** Рендерира се в document.body — позиция и размер от JS (viewport), без изрязване от sidebar. */
+.notif-bell-panel--portal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notif-bell--align-right .notif-bell-panel:not(.notif-bell-panel--portal) {
   right: 0;
 }
 
-.notif-bell--align-left .notif-bell-panel {
+.notif-bell--align-left .notif-bell-panel:not(.notif-bell-panel--portal) {
   left: 0;
 }
 

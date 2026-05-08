@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Bell, Calendar, FileText, Vote } from 'lucide-react'
 import { format } from 'date-fns'
@@ -34,19 +42,69 @@ function fmtTime(iso: string): string {
   return format(d, 'dd.MM.yyyy HH:mm', { locale: bg })
 }
 
+const PANEL_WIDTH_REM = 22
+const PANEL_MAX_HEIGHT_REM = 28
+
 export default function NotificationBell({ ariaLabel, className, align = 'right' }: Props) {
   const navigate = useNavigate()
   const { items, unreadCount, markAllRead, markRead } = useNotifications()
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
+
+  /** Fixed позиция към viewport — избягва изрязване от sidebar overflow. */
+  useLayoutEffect(() => {
+    if (!open) return
+
+    const updatePosition = () => {
+      const el = wrapperRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const remPx =
+        typeof window !== 'undefined'
+          ? parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+          : 16
+      const panelW = Math.min(PANEL_WIDTH_REM * remPx, window.innerWidth - 16)
+      let left = align === 'right' ? rect.right - panelW : rect.left
+      left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8))
+      let top = rect.bottom + 8
+      const spaceBelow = window.innerHeight - top - 16
+      const desiredMaxH = Math.min(PANEL_MAX_HEIGHT_REM * remPx, spaceBelow)
+      let maxHeight = desiredMaxH
+      if (desiredMaxH < 140 && rect.top > 160) {
+        const aboveH = Math.min(PANEL_MAX_HEIGHT_REM * remPx, rect.top - 16)
+        if (aboveH >= desiredMaxH) {
+          maxHeight = aboveH
+          top = rect.top - maxHeight - 8
+        }
+      }
+      setPanelStyle({
+        position: 'fixed',
+        top,
+        left,
+        width: panelW,
+        maxHeight: Math.max(120, maxHeight),
+        zIndex: 10050,
+      })
+    }
+
+    updatePosition()
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [open, align, items.length])
 
   useEffect(() => {
     if (!open) return
     const onClickOutside = (e: MouseEvent) => {
-      if (!wrapperRef.current) return
-      if (!wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      const t = e.target as Node
+      if (wrapperRef.current?.contains(t)) return
+      if (panelRef.current?.contains(t)) return
+      setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
@@ -67,6 +125,61 @@ export default function NotificationBell({ ariaLabel, className, align = 'right'
     },
     [markRead, navigate]
   )
+
+  const panelContent = open
+    ? createPortal(
+      <div
+        ref={panelRef}
+        className="notif-bell-panel notif-bell-panel--portal"
+        style={panelStyle}
+        role="dialog"
+        aria-label="Уведомления"
+      >
+        <div className="notif-bell-panel-head">
+          <span className="notif-bell-panel-title">Уведомления</span>
+          <button
+            type="button"
+            className="notif-bell-panel-mark"
+            onClick={() => void markAllRead()}
+            disabled={unreadCount === 0}
+          >
+            Прочети всички
+          </button>
+        </div>
+
+        {items.length === 0 ? (
+          <p className="notif-bell-empty">Няма уведомления.</p>
+        ) : (
+          <ul className="notif-bell-list">
+            {items.map((n) => {
+              const Icon = KIND_ICON[n.kind] ?? Bell
+              const unread = !n.read_at
+              return (
+                <li key={n.id} className={`notif-bell-item${unread ? ' is-unread' : ''}`}>
+                  <button
+                    type="button"
+                    className="notif-bell-item-btn"
+                    onClick={() => handleItemClick(n)}
+                  >
+                    <span className="notif-bell-item-icon" aria-hidden>
+                      <Icon size={16} />
+                    </span>
+                    <span className="notif-bell-item-body">
+                      <span className="notif-bell-item-title">{n.title}</span>
+                      {n.body ? <span className="notif-bell-item-text">{n.body}</span> : null}
+                      <span className="notif-bell-item-time">{fmtTime(n.created_at)}</span>
+                    </span>
+                    {unread ? <span className="notif-bell-item-dot" aria-hidden /> : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>,
+      document.body
+    )
+    : null
 
   return (
     <div
@@ -90,51 +203,7 @@ export default function NotificationBell({ ariaLabel, className, align = 'right'
         ) : null}
       </button>
 
-      {open ? (
-        <div className="notif-bell-panel" role="dialog" aria-label="Уведомления">
-          <div className="notif-bell-panel-head">
-            <span className="notif-bell-panel-title">Уведомления</span>
-            <button
-              type="button"
-              className="notif-bell-panel-mark"
-              onClick={() => void markAllRead()}
-              disabled={unreadCount === 0}
-            >
-              Прочети всички
-            </button>
-          </div>
-
-          {items.length === 0 ? (
-            <p className="notif-bell-empty">Няма уведомления.</p>
-          ) : (
-            <ul className="notif-bell-list">
-              {items.map((n) => {
-                const Icon = KIND_ICON[n.kind] ?? Bell
-                const unread = !n.read_at
-                return (
-                  <li key={n.id} className={`notif-bell-item${unread ? ' is-unread' : ''}`}>
-                    <button
-                      type="button"
-                      className="notif-bell-item-btn"
-                      onClick={() => handleItemClick(n)}
-                    >
-                      <span className="notif-bell-item-icon" aria-hidden>
-                        <Icon size={16} />
-                      </span>
-                      <span className="notif-bell-item-body">
-                        <span className="notif-bell-item-title">{n.title}</span>
-                        {n.body ? <span className="notif-bell-item-text">{n.body}</span> : null}
-                        <span className="notif-bell-item-time">{fmtTime(n.created_at)}</span>
-                      </span>
-                      {unread ? <span className="notif-bell-item-dot" aria-hidden /> : null}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
-      ) : null}
+      {panelContent}
     </div>
   )
 }
