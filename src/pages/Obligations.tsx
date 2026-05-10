@@ -91,6 +91,7 @@ const kindLabels: Record<string, string> = {
 const SUMMARY_NO_PERIOD = '__no_period__'
 const SUMMARY_PERIOD_COL_MIN = 0.005
 const OBL_LINES_PAGE_SIZE = 25
+const PAYMENTS_PAGE_SIZE = 25
 
 export default function Obligations() {
   const { canEdit, user, userRole } = useAuth()
@@ -142,6 +143,10 @@ export default function Obligations() {
   const [viewerLinkedUnitIds, setViewerLinkedUnitIds] = useState<Set<string>>(new Set())
   /** Paging за таблицата «Редове задължения по обекти». */
   const [oblLinesPage, setOblLinesPage] = useState(1)
+  /** Paging за таблицата «Плащания». */
+  const [paymentsPage, setPaymentsPage] = useState(1)
+  /** Табове: обобщение / редове (само админ) / плащания */
+  const [obligationsTab, setObligationsTab] = useState<'summary' | 'lines' | 'payments'>('summary')
 
   const fetchDueByUnitFromDb = async () => {
     try {
@@ -713,6 +718,17 @@ export default function Obligations() {
     return true
   })
 
+  const paymentsPageCount = Math.max(1, Math.ceil(filteredPayments.length / PAYMENTS_PAGE_SIZE))
+  const paymentsSafePage = Math.min(paymentsPage, paymentsPageCount)
+  const pagedPayments = useMemo(
+    () =>
+      filteredPayments.slice(
+        (paymentsSafePage - 1) * PAYMENTS_PAGE_SIZE,
+        paymentsSafePage * PAYMENTS_PAGE_SIZE
+      ),
+    [filteredPayments, paymentsSafePage]
+  )
+
   const filteredObligationLines = obligationLines.filter(
     (o) => filterUnit === 'all' || o.unit_id === filterUnit
   )
@@ -730,7 +746,14 @@ export default function Obligations() {
 
   useEffect(() => {
     setOblLinesPage(1)
+    setPaymentsPage(1)
   }, [filterUnit])
+
+  useEffect(() => {
+    if (userRole !== 'admin' && obligationsTab === 'lines') {
+      setObligationsTab('summary')
+    }
+  }, [obligationsTab, userRole])
 
   const paidByUnit = useMemo(() => {
     const m: Record<string, number> = {}
@@ -924,9 +947,21 @@ export default function Obligations() {
             ))}
           </select>
         </div>
-        {!isViewer && (
+        {obligationsTab === 'payments' && (
           <div className="payments-count">
-            Показване: {filteredPayments.length} от {payments.length} плащания
+            {!isViewer ? (
+              <>
+                По филтър: {filteredPayments.length} от {payments.length} плащания
+              </>
+            ) : (
+              <>Плащания: {filteredPayments.length}</>
+            )}
+            {paymentsPageCount > 1
+              ? ` · тази страница ${(paymentsSafePage - 1) * PAYMENTS_PAGE_SIZE + 1}–${Math.min(
+                  paymentsSafePage * PAYMENTS_PAGE_SIZE,
+                  filteredPayments.length
+                )}`
+              : ''}
           </div>
         )}
       </div>
@@ -961,278 +996,371 @@ export default function Obligations() {
         </div>
       )}
 
-      <div className="obligations-period-panel">
-        {unitsWithObligations.length > 0 && unitSummaryRows.length > 0 && (
-          <div className="obligations-unit-summary">
-            <h2 className="obligations-summary-heading">Обобщение по обекти</h2>
-            <div className="table-wrap obligations-summary-table-wrap">
-              <table className="obligations-summary-table">
-                <thead>
-                  <tr>
-                    <th>Обект</th>
-                    {periodOwedColumns.map((col) => (
-                      <th
-                        key={col.key}
-                        className="num obligations-summary-period-th"
-                        title="Остатък (неплатено) за отворен период; стари/без период — в „Стари“; затворени периоди нямат колонка"
-                      >
-                        {col.label}
-                      </th>
-                    ))}
-                    <th className="num" title="Сума от начислените задължения (лица на редовете)">
-                      Начислено
-                    </th>
-                    <th className="num" title="Сума от записите със статус „платено“">
-                      Платено
-                    </th>
-                    <th className="num" title="Текущо неплатено (остатък по редове)">
-                      Остатък
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unitSummaryRows.map(({ unit: u, totalOrig, totalRem, paid }) => (
-                    <tr key={u.id}>
-                      <td>
-                        <strong>
-                          {u.group?.name ?? labelForCode(u.type)} {u.number}
-                        </strong>
-                        <div className="unit-owner">{u.owner_name}</div>
-                      </td>
-                      {periodOwedColumns.map((col) => {
-                        const v = remByUnitByPeriod[u.id]?.[col.key] ?? 0
-                        return (
-                          <td key={col.key} className="num obligations-summary-period-td">
-                            {v > SUMMARY_PERIOD_COL_MIN ? (
-                              <span className={v > 0.009 ? 'balance-owed' : 'balance-ok'}>
-                                {v.toFixed(2)} €
-                              </span>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                        )
-                      })}
-                      <td className="num">{totalOrig.toFixed(2)} €</td>
-                      <td className="num">{paid.toFixed(2)} €</td>
-                      <td className="num">
-                        <span className={totalRem > 0.009 ? 'balance-owed' : 'balance-ok'}>{totalRem.toFixed(2)} €</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="obligations-period-hint">
-              <strong>Начислено</strong> — сума на начислените задължения; <strong>Платено</strong> — сума от <em>всички</em> плащания
-              със статус „платено“ (всички начини); <strong>Остатък</strong> — текущо неплатено по редовете. Само плащанията,
-              отчетени „в брой“ / банков превод, влизат в каса/смета в «Финанси → Налични пари». <strong>Колонките с период</strong>{' '}
-              показват остатъка по съответния период, само ако е <strong>отворен</strong> (как в «Периоди»); за <strong>затворен</strong>{' '}
-              период няма отделна колонка. Стари/без период — в „Стари“ (след «Обект»). Скрият се колонки без неплатено по обектите.
-              При много периоди ползвай хоризонталния скрол.
-            </p>
-          </div>
-        )}
-        {units.length === 0 && (
-          <p className="obligations-period-empty">Няма регистрирани обекти.</p>
-        )}
-        {units.length > 0 &&
-          unitsWithObligations.length === 0 &&
-          !loadingObligations && (
-            <p className="obligations-period-empty">
-              Няма записани задължения по обекти. Добавете ред в таблицата по-долу или „Пренесен дълг по обект“ — тогава
-              обектът ще се появи тук и във филтъра.
-            </p>
+      <div className="obligations-tabs">
+        <div className="obligations-tabs-nav" role="tablist" aria-label="Задължения — изгледи">
+          <button
+            type="button"
+            role="tab"
+            id="obligations-tab-summary-btn"
+            aria-selected={obligationsTab === 'summary'}
+            aria-controls="obligations-panel-summary"
+            className={`obligations-tab${obligationsTab === 'summary' ? ' is-active' : ''}`}
+            onClick={() => setObligationsTab('summary')}
+          >
+            Обобщение по обекти
+          </button>
+          {userRole === 'admin' && (
+            <button
+              type="button"
+              role="tab"
+              id="obligations-tab-lines-btn"
+              aria-selected={obligationsTab === 'lines'}
+              aria-controls="obligations-panel-lines"
+              className={`obligations-tab${obligationsTab === 'lines' ? ' is-active' : ''}`}
+              onClick={() => setObligationsTab('lines')}
+            >
+              Редове задължения
+            </button>
           )}
-        {unitsWithObligations.length > 0 && unitSummaryRows.length === 0 && (
-          <p className="obligations-period-empty">
-            Няма обекти за показване — провери филтъра по-горе.
-          </p>
-        )}
-      </div>
+          <button
+            type="button"
+            role="tab"
+            id="obligations-tab-payments-btn"
+            aria-selected={obligationsTab === 'payments'}
+            aria-controls="obligations-panel-payments"
+            className={`obligations-tab${obligationsTab === 'payments' ? ' is-active' : ''}`}
+            onClick={() => setObligationsTab('payments')}
+          >
+            Плащания
+          </button>
+        </div>
 
-      {canEdit() && (
-        <div className="obligations-lines-panel">
-          <div className="obligations-lines-head">
-            <h2 className="obligations-lines-heading">Редове задължения по обекти</h2>
-            {!loadingObligations && filteredObligationLines.length > 0 && (
-              <span className="obligations-lines-count">
-                {filteredObligationLines.length}{' '}
-                {filteredObligationLines.length === 1 ? 'ред' : 'реда'}
-                {oblLinesPageCount > 1 ? ` · стр. ${oblLinesSafePage} / ${oblLinesPageCount}` : ''}
-              </span>
-            )}
-          </div>
-          <p className="obligations-lines-hint">
-            Редът „Пренесен дълг“ (без период) следва сумата от „Пренесен дълг по обект“; редакция тук обновява и полето в
-            обекта. Редакция на други редове; изтриване само ако няма приспадания от плащания. Редовните тарифи от период при
-            следващо „Запази суми“ в <strong>Периоди</strong> могат да се презапишат от синхронизацията.
-          </p>
-          {loadingObligations ? (
-            <p className="obligations-period-empty">Зареждане на редове…</p>
-          ) : filteredObligationLines.length === 0 ? (
-            <p className="obligations-period-empty">Няма редове за избрания филтър.</p>
-          ) : (
-            <>
-              <div className="table-wrap obligations-obl-table-wrap">
-              <table className="obligations-obl-table">
-                <thead>
-                  <tr>
-                    <th>Обект</th>
-                    <th>Период</th>
-                    <th>Вид</th>
-                    <th>Заглавие</th>
-                    <th className="num">Оригинал</th>
-                    <th className="num">Остатък</th>
-                    {canEdit() && <th>Действия</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedObligationLines.map((row) => {
-                    const u = units.find((x) => x.id === row.unit_id)
-                    const unitLabel = u ? `${u.group?.name ?? labelForCode(u.type)} ${u.number}`.trim() : '—'
-                    const periodCell = row.periodName ?? (row.billing_period_id ? '—' : 'без период')
-                    return (
-                      <tr key={row.id}>
-                        <td>
-                          <strong>{unitLabel}</strong>
-                          {u && <div className="unit-owner">{u.owner_name}</div>}
-                        </td>
-                        <td>{periodCell}</td>
-                        <td>{kindLabels[row.kind] ?? row.kind}</td>
-                        <td>{row.title}</td>
-                        <td className="num">{row.amount_original.toFixed(2)} €</td>
-                        <td className="num">{row.amount_remaining.toFixed(2)} €</td>
-                        {canEdit() && (
-                          <td>
-                            <div className="payment-row-actions">
-                              <button
-                                type="button"
-                                className="icon-btn"
-                                title="Редактирай"
-                                onClick={() => void openEditObligationModal(row)}
+        <div className="obligations-tabs-panels">
+          {obligationsTab === 'summary' && (
+            <div
+              id="obligations-panel-summary"
+              role="tabpanel"
+              aria-labelledby="obligations-tab-summary-btn"
+              className="obligations-tabs-panel"
+            >
+              <div className="obligations-period-panel">
+                {unitsWithObligations.length > 0 && unitSummaryRows.length > 0 && (
+                  <div className="obligations-unit-summary">
+                    <div className="table-wrap obligations-summary-table-wrap">
+                      <table className="obligations-summary-table">
+                        <thead>
+                          <tr>
+                            <th>Обект</th>
+                            {periodOwedColumns.map((col) => (
+                              <th
+                                key={col.key}
+                                className="num obligations-summary-period-th"
+                                title="Остатък (неплатено) за отворен период; стари/без период — в „Стари“; затворени периоди нямат колонка"
                               >
-                                <Edit2 size={18} />
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-btn danger"
-                                title="Изтрий"
-                                onClick={() => void deleteObligationLine(row)}
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                                {col.label}
+                              </th>
+                            ))}
+                            <th className="num" title="Сума от начислените задължения (лица на редовете)">
+                              Начислено
+                            </th>
+                            <th className="num" title="Сума от записите със статус „платено“">
+                              Платено
+                            </th>
+                            <th className="num" title="Текущо неплатено (остатък по редове)">
+                              Остатък
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {unitSummaryRows.map(({ unit: u, totalOrig, totalRem, paid }) => (
+                            <tr key={u.id}>
+                              <td>
+                                <strong>
+                                  {u.group?.name ?? labelForCode(u.type)} {u.number}
+                                </strong>
+                                <div className="unit-owner">{u.owner_name}</div>
+                              </td>
+                              {periodOwedColumns.map((col) => {
+                                const v = remByUnitByPeriod[u.id]?.[col.key] ?? 0
+                                return (
+                                  <td key={col.key} className="num obligations-summary-period-td">
+                                    {v > SUMMARY_PERIOD_COL_MIN ? (
+                                      <span className={v > 0.009 ? 'balance-owed' : 'balance-ok'}>
+                                        {v.toFixed(2)} €
+                                      </span>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </td>
+                                )
+                              })}
+                              <td className="num">{totalOrig.toFixed(2)} €</td>
+                              <td className="num">{paid.toFixed(2)} €</td>
+                              <td className="num">
+                                <span className={totalRem > 0.009 ? 'balance-owed' : 'balance-ok'}>
+                                  {totalRem.toFixed(2)} €
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="obligations-period-hint">
+                      <strong>Начислено</strong> — сума на начислените задължения; <strong>Платено</strong> — сума от{' '}
+                      <em>всички</em> плащания със статус „платено“ (всички начини); <strong>Остатък</strong> — текущо
+                      неплатено по редовете. Само плащанията, отчетени „в брой“ / банков превод, влизат в каса/смета в «Финанси
+                      → Налични пари». <strong>Колонките с период</strong> показват остатъка по съответния период, само ако е{' '}
+                      <strong>отворен</strong> (как в «Периоди»); за <strong>затворен</strong> период няма отделна колонка.
+                      Стари/без период — в „Стари“ (след «Обект»). Скрият се колонки без неплатено по обектите. При много
+                      периоди ползвай хоризонталния скрол.
+                    </p>
+                  </div>
+                )}
+                {units.length === 0 && (
+                  <p className="obligations-period-empty">Няма регистрирани обекти.</p>
+                )}
+                {units.length > 0 &&
+                  unitsWithObligations.length === 0 &&
+                  !loadingObligations && (
+                    <p className="obligations-period-empty">
+                      Няма записани задължения по обекти. Добавете ред в таба „Редове задължения“ или „Пренесен дълг по
+                      обект“ — тогава обектът ще се появи тук и във филтъра.
+                    </p>
+                  )}
+                {unitsWithObligations.length > 0 && unitSummaryRows.length === 0 && (
+                  <p className="obligations-period-empty">
+                    Няма обекти за показване — провери филтъра по-горе.
+                  </p>
+                )}
+              </div>
             </div>
-              {oblLinesPageCount > 1 && (
-                <div className="obligations-obl-pager">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={oblLinesSafePage <= 1}
-                    onClick={() => setOblLinesPage((p) => Math.max(1, p - 1))}
-                  >
-                    Назад
-                  </button>
-                  <span className="obligations-obl-pager-info">
-                    {oblLinesSafePage} / {oblLinesPageCount}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={oblLinesSafePage >= oblLinesPageCount}
-                    onClick={() => setOblLinesPage((p) => Math.min(oblLinesPageCount, p + 1))}
-                  >
-                    Напред
-                  </button>
+          )}
+
+          {userRole === 'admin' && obligationsTab === 'lines' && (
+            <div
+              id="obligations-panel-lines"
+              role="tabpanel"
+              aria-labelledby="obligations-tab-lines-btn"
+              className="obligations-tabs-panel"
+            >
+              <div className="obligations-lines-panel">
+                <div className="obligations-lines-head">
+                  {!loadingObligations && filteredObligationLines.length > 0 && (
+                    <span className="obligations-lines-count">
+                      {filteredObligationLines.length}{' '}
+                      {filteredObligationLines.length === 1 ? 'ред' : 'реда'}
+                      {oblLinesPageCount > 1 ? ` · стр. ${oblLinesSafePage} / ${oblLinesPageCount}` : ''}
+                    </span>
+                  )}
                 </div>
-              )}
-            </>
+                <p className="obligations-lines-hint">
+                  Редът „Пренесен дълг“ (без период) следва сумата от „Пренесен дълг по обект“; редакция тук обновява и
+                  полето в обекта. Редакция на други редове; изтриване само ако няма приспадания от плащания. Редовните
+                  тарифи от период при следващо „Запази суми“ в <strong>Периоди</strong> могат да се презапишат от
+                  синхронизацията.
+                </p>
+                {loadingObligations ? (
+                  <p className="obligations-period-empty">Зареждане на редове…</p>
+                ) : filteredObligationLines.length === 0 ? (
+                  <p className="obligations-period-empty">Няма редове за избрания филтър.</p>
+                ) : (
+                  <>
+                    <div className="table-wrap obligations-obl-table-wrap">
+                      <table className="obligations-obl-table">
+                        <thead>
+                          <tr>
+                            <th>Обект</th>
+                            <th>Период</th>
+                            <th>Вид</th>
+                            <th>Заглавие</th>
+                            <th className="num">Оригинал</th>
+                            <th className="num">Остатък</th>
+                            <th>Действия</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedObligationLines.map((row) => {
+                            const u = units.find((x) => x.id === row.unit_id)
+                            const unitLabel = u ? `${u.group?.name ?? labelForCode(u.type)} ${u.number}`.trim() : '—'
+                            const periodCell = row.periodName ?? (row.billing_period_id ? '—' : 'без период')
+                            return (
+                              <tr key={row.id}>
+                                <td>
+                                  <strong>{unitLabel}</strong>
+                                  {u && <div className="unit-owner">{u.owner_name}</div>}
+                                </td>
+                                <td>{periodCell}</td>
+                                <td>{kindLabels[row.kind] ?? row.kind}</td>
+                                <td>{row.title}</td>
+                                <td className="num">{row.amount_original.toFixed(2)} €</td>
+                                <td className="num">{row.amount_remaining.toFixed(2)} €</td>
+                                <td>
+                                  <div className="payment-row-actions">
+                                    <button
+                                      type="button"
+                                      className="icon-btn"
+                                      title="Редактирай"
+                                      onClick={() => void openEditObligationModal(row)}
+                                    >
+                                      <Edit2 size={18} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="icon-btn danger"
+                                      title="Изтрий"
+                                      onClick={() => void deleteObligationLine(row)}
+                                    >
+                                      <Trash2 size={18} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {oblLinesPageCount > 1 && (
+                      <div className="obligations-obl-pager">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={oblLinesSafePage <= 1}
+                          onClick={() => setOblLinesPage((p) => Math.max(1, p - 1))}
+                        >
+                          Назад
+                        </button>
+                        <span className="obligations-obl-pager-info">
+                          {oblLinesSafePage} / {oblLinesPageCount}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={oblLinesSafePage >= oblLinesPageCount}
+                          onClick={() => setOblLinesPage((p) => Math.min(oblLinesPageCount, p + 1))}
+                        >
+                          Напред
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {obligationsTab === 'payments' && (
+            <div
+              id="obligations-panel-payments"
+              role="tabpanel"
+              aria-labelledby="obligations-tab-payments-btn"
+              className="obligations-tabs-panel"
+            >
+              <div className="payments-table">
+                {filteredPayments.length === 0 ? (
+                  <div className="empty-state">Няма записи</div>
+                ) : (
+                  <>
+                    <div className="payments-table-body-wrap">
+                      <table className="obligations-payments-table">
+                      <thead>
+                        <tr>
+                          <th>Обект</th>
+                          <th>Описание</th>
+                          <th>Сума</th>
+                          <th>Дата на плащане</th>
+                          {canEdit() && <th>Действия</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedPayments.map((payment) => {
+                        const u = payment.units
+                        return (
+                          <tr key={payment.id} className="payment-row">
+                            <td>
+                              <div className="unit-info">
+                                <strong>
+                                  {u ? `${u.group?.name ?? labelForCode(u.type)} ${u.number}` : '—'}
+                                </strong>
+                                <div className="unit-owner">{u?.owner_name ?? ''}</div>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="income-description">{paymentDescriptionLine(payment)}</div>
+                              {payment.payment_method && paymentMethodLabels[payment.payment_method] && (
+                                <div className="payment-method-tag">{paymentMethodLabels[payment.payment_method]}</div>
+                              )}
+                            </td>
+                            <td>
+                              <strong className="amount">{payment.amount.toFixed(2)} €</strong>
+                            </td>
+                            <td>
+                              {payment.payment_date ? (
+                                format(new Date(payment.payment_date), 'dd.MM.yyyy', { locale: bg })
+                              ) : (
+                                <span className="no-date">—</span>
+                              )}
+                            </td>
+                            {canEdit() && (
+                              <td>
+                                <div className="payment-row-actions">
+                                  {payment.income_id && (
+                                    <button
+                                      type="button"
+                                      className="icon-btn"
+                                      onClick={() => openEditModal(payment)}
+                                      title="Редактирай"
+                                    >
+                                      <Edit2 size={18} />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="icon-btn danger"
+                                    onClick={() => void handleDeletePayment(payment)}
+                                    title="Изтрий"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        )
+                        })}
+                      </tbody>
+                    </table>
+                    </div>
+                    {paymentsPageCount > 1 && (
+                      <div className="obligations-obl-pager">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={paymentsSafePage <= 1}
+                          onClick={() => setPaymentsPage((p) => Math.max(1, p - 1))}
+                        >
+                          Назад
+                        </button>
+                        <span className="obligations-obl-pager-info">
+                          {paymentsSafePage} / {paymentsPageCount}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={paymentsSafePage >= paymentsPageCount}
+                          onClick={() => setPaymentsPage((p) => Math.min(paymentsPageCount, p + 1))}
+                        >
+                          Напред
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
-      )}
-
-      <div className="payments-table">
-        <h2 className="obligations-payments-table-title">Плащания</h2>
-        {filteredPayments.length === 0 ? (
-          <div className="empty-state">Няма записи</div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Обект</th>
-                <th>Описание</th>
-                <th>Сума</th>
-                <th>Дата на плащане</th>
-                {canEdit() && <th>Действия</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPayments.map((payment) => {
-                const u = payment.units
-                return (
-                  <tr key={payment.id} className="payment-row">
-                    <td>
-                      <div className="unit-info">
-                        <strong>
-                          {u ? `${u.group?.name ?? labelForCode(u.type)} ${u.number}` : '—'}
-                        </strong>
-                        <div className="unit-owner">{u?.owner_name ?? ''}</div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="income-description">{paymentDescriptionLine(payment)}</div>
-                      {payment.payment_method && paymentMethodLabels[payment.payment_method] && (
-                        <div className="payment-method-tag">{paymentMethodLabels[payment.payment_method]}</div>
-                      )}
-                    </td>
-                    <td>
-                      <strong className="amount">{payment.amount.toFixed(2)} €</strong>
-                    </td>
-                    <td>
-                      {payment.payment_date ? (
-                        format(new Date(payment.payment_date), 'dd.MM.yyyy', { locale: bg })
-                      ) : (
-                        <span className="no-date">—</span>
-                      )}
-                    </td>
-                    {canEdit() && (
-                      <td>
-                        <div className="payment-row-actions">
-                          {payment.income_id && (
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              onClick={() => openEditModal(payment)}
-                              title="Редактирай"
-                            >
-                              <Edit2 size={18} />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="icon-btn danger"
-                            onClick={() => void handleDeletePayment(payment)}
-                            title="Изтрий"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
       </div>
 
       {showCarriedDebtModal && (
