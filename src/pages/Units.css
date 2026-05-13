@@ -373,6 +373,12 @@
   margin-top: 0.5rem;
 }
 
+.units-admin-data-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .units-data-table {
   font-size: 0.9rem;
 }

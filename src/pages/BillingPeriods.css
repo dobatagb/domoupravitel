@@ -61,7 +61,8 @@
   margin: 0;
 }
 
-.table-wrap {
+/* .table-wrap е само под .billing-periods-page — иначе overflow-x от bundle чупи sticky thead другаде */
+.billing-periods-page .table-wrap {
   overflow-x: auto;
 }
 

@@ -614,7 +614,7 @@ export default function Units() {
                     <section className="viewer-unit-section" aria-label="Последни плащания">
                       <h3 className="viewer-unit-h3">Последни плащания (до {VIEWER_PAYMENTS_LIMIT})</h3>
                       {pays.length > 0 ? (
-                        <div className="table-wrap viewer-payments-table-wrap">
+                        <div className="viewer-payments-table-wrap">
                           <table className="data-table viewer-payments-table">
                             <thead>
                               <tr>
@@ -670,7 +670,7 @@ export default function Units() {
           </>
         ) : (
           <>
-            <div className="table-wrap">
+            <div className="units-admin-data-table-wrap">
               <table className="data-table units-data-table">
                 <thead>
                   <tr>

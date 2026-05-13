@@ -82,6 +82,17 @@ function parseMoney(raw: string): number {
   return Number.isFinite(n) ? n : NaN
 }
 
+/** Supabase numeric често идва като string — преди .toFixed() и суми. */
+function coercePaymentAmount(amount: unknown): number {
+  if (typeof amount === 'number' && Number.isFinite(amount)) return amount
+  if (typeof amount === 'string') {
+    const n = parseFloat(amount.replace(',', '.'))
+    return Number.isFinite(n) ? n : 0
+  }
+  const n = Number(amount)
+  return Number.isFinite(n) ? n : 0
+}
+
 const kindLabels: Record<string, string> = {
   regular: 'Редовно',
   extraordinary: 'Извънредно',
@@ -330,10 +341,18 @@ export default function Obligations() {
           .order('created_at', { ascending: false })
       )
       if (error) throw error
-      setPayments((data as Payment[]) || [])
+      const rows = (data as unknown[]) ?? []
+      const normalized: Payment[] = rows.map((raw) => {
+        const r = raw as Payment & { amount?: unknown }
+        return {
+          ...r,
+          amount: coercePaymentAmount(r.amount),
+        }
+      })
+      setPayments(normalized)
     } catch (error: unknown) {
       console.error('Error fetching payments:', error)
-      const msg = 'Неуспешно зареждане на задълженията.'
+      const msg = 'Неуспешно зареждане на плащанията.'
       setLoadError(msg)
       setPayments([])
     } finally {
@@ -514,7 +533,7 @@ export default function Obligations() {
     if (!canEdit()) return
     const u = payment.units
     const label = u
-      ? `${u.group?.name ?? labelForCode(u.type)} ${u.number} — ${payment.amount.toFixed(2)} €`
+      ? `${u.group?.name ?? labelForCode(u.type)} ${u.number} — ${coercePaymentAmount(payment.amount).toFixed(2)} €`
       : 'това плащане'
     if (!confirm(`Изтриване на плащане: ${label}?\n\nДействието не може да се отмени.`)) {
       return
@@ -767,7 +786,7 @@ export default function Obligations() {
   }, [payments])
 
   const stats = {
-    total: filteredPayments.reduce((sum, p) => sum + p.amount, 0),
+    total: filteredPayments.reduce((sum, p) => sum + coercePaymentAmount(p.amount), 0),
   }
 
   const { unitSummaryRows, periodOwedColumns, remByUnitByPeriod } = useMemo(() => {
@@ -1046,8 +1065,8 @@ export default function Obligations() {
               <div className="obligations-period-panel">
                 {unitsWithObligations.length > 0 && unitSummaryRows.length > 0 && (
                   <div className="obligations-unit-summary">
-                    <div className="table-wrap obligations-summary-table-wrap">
-                      <table className="obligations-summary-table">
+                    <div className="obligations-summary-table-wrap">
+                      <table className="obligations-summary-table obligations-sticky-head">
                         <thead>
                           <tr>
                             <th>Обект</th>
@@ -1166,8 +1185,8 @@ export default function Obligations() {
                   <p className="obligations-period-empty">Няма редове за избрания филтър.</p>
                 ) : (
                   <>
-                    <div className="table-wrap obligations-obl-table-wrap">
-                      <table className="obligations-obl-table">
+                    <div className="obligations-obl-table-wrap">
+                      <table className="obligations-obl-table obligations-sticky-head">
                         <thead>
                           <tr>
                             <th>Обект</th>
@@ -1263,7 +1282,7 @@ export default function Obligations() {
                 ) : (
                   <>
                     <div className="payments-table-body-wrap">
-                      <table className="obligations-payments-table">
+                      <table className="obligations-payments-table obligations-sticky-head">
                       <thead>
                         <tr>
                           <th>Обект</th>
@@ -1293,7 +1312,7 @@ export default function Obligations() {
                               )}
                             </td>
                             <td>
-                              <strong className="amount">{payment.amount.toFixed(2)} €</strong>
+                              <strong className="amount">{coercePaymentAmount(payment.amount).toFixed(2)} €</strong>
                             </td>
                             <td>
                               {payment.payment_date ? (

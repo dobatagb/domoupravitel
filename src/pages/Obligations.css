@@ -171,12 +171,7 @@
 
 .obligations-obl-table-wrap {
   margin-top: 0.5rem;
-  overflow-x: auto;
-  overflow-y: auto;
   max-width: 100%;
-  max-height: min(65vh, 520px);
-  position: relative;
-  -webkit-overflow-scrolling: touch;
 }
 
 .obligations-obl-table {
@@ -227,12 +222,7 @@
 }
 
 .payments-table-body-wrap {
-  overflow-x: auto;
-  overflow-y: auto;
   max-width: 100%;
-  max-height: min(65vh, 520px);
-  position: relative;
-  -webkit-overflow-scrolling: touch;
 }
 
 .obligations-payments-table-title {
@@ -254,7 +244,7 @@
   background-color: var(--background);
 }
 
-.payments-table th {
+.payments-table thead th {
   padding: 1rem;
   text-align: left;
   font-weight: 600;
@@ -550,11 +540,9 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -617,14 +605,19 @@
 }
 
 .obligations-unit-summary {
-  /* Хоризонтален/вертикален скрол на таблицата е в .obligations-summary-table-wrap */
+  /* Широката таблица скролира хоризонтално в main-content (Layout), не тук — за да работи sticky thead */
   overflow-x: visible;
 }
 
 .obligations-unit-summary table {
   width: 100%;
-  border-collapse: collapse;
   font-size: 0.875rem;
+}
+
+/* По-висока специфичност от .obligations-unit-summary table — иначе collapse презаписва separate и sticky не работи */
+.obligations-unit-summary table.obligations-summary-table {
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .obligations-unit-summary th,
@@ -640,12 +633,7 @@
 }
 
 .obligations-summary-table-wrap {
-  overflow-x: auto;
-  overflow-y: auto;
   max-width: 100%;
-  max-height: min(65vh, 520px);
-  position: relative;
-  -webkit-overflow-scrolling: touch;
 }
 
 .obligations-summary-table {
@@ -758,15 +746,30 @@
   margin-top: 0.2rem;
 }
 
-/* Лепкав заглавен ред при вертикален скрол в wrap-овете */
+/* Лепкав thead за трите data таблици; скролпорт е .main-content (Layout). */
+.obligations-sticky-head {
+  border-collapse: separate;
+  border-spacing: 0;
+}
 
-.obligations-summary-table thead th {
+.obligations-sticky-head thead th {
+  position: -webkit-sticky;
   position: sticky;
   top: 0;
-  z-index: 10;
-  background: var(--surface);
+  z-index: 20;
   background-clip: padding-box;
-  box-shadow: 0 1px 0 0 var(--border), 0 4px 12px -4px rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 1px 0 0 var(--border),
+    0 4px 12px -4px rgba(15, 23, 42, 0.1);
+}
+
+.obligations-summary-table.obligations-sticky-head thead th,
+.obligations-obl-table.obligations-sticky-head thead th {
+  background-color: var(--surface);
+}
+
+.payments-table .obligations-sticky-head thead th {
+  background-color: var(--background);
 }
 
 .obligations-summary-table tbody td:first-child,
@@ -786,24 +789,6 @@
   background: var(--surface);
 }
 
-.obligations-obl-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--surface);
-  background-clip: padding-box;
-  box-shadow: 0 1px 0 0 var(--border), 0 4px 12px -4px rgba(15, 23, 42, 0.1);
-}
-
-.payments-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--background);
-  background-clip: padding-box;
-  box-shadow: 0 1px 0 0 var(--border), 0 4px 12px -4px rgba(15, 23, 42, 0.1);
-}
-
 .payments-table tbody td {
   background: var(--surface);
 }
@@ -813,10 +798,6 @@
 }
 
 @media (max-width: 768px) {
-  .payments-table-body-wrap {
-    overflow-x: auto;
-  }
-
   .stats-cards {
     grid-template-columns: 1fr;
   }

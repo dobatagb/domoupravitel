@@ -230,7 +230,9 @@ function LayoutInner() {
       </aside>
       <div className="layout-main-column">
         <main className="main-content">
-          <Outlet />
+          <div className="main-content-inner">
+            <Outlet />
+          </div>
         </main>
         <footer className="layout-site-footer">© 2026 ЕС Ален Мак 22</footer>
       </div>

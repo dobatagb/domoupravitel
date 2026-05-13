@@ -670,7 +670,7 @@ export default function Movements() {
       {rows.length === 0 && !error ? (
         <p className="movements-muted">Няма записи.</p>
       ) : (
-        <div className="table-wrap movements-table-wrap">
+        <div className="movements-table-wrap">
           {filteredRows.length === 0 && (
             <p className="movements-muted" style={{ padding: '1rem' }}>
               Няма записи за избраните филтри.

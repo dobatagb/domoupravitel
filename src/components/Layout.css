@@ -1,6 +1,11 @@
 .layout {
   display: flex;
+  box-sizing: border-box;
+  height: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   background-color: var(--background);
 }
 
@@ -12,7 +17,8 @@
   flex-direction: column;
   position: sticky;
   top: 0;
-  height: 100vh;
+  align-self: stretch;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -172,19 +178,34 @@
 }
 
 .layout-main-column {
-  flex: 1;
+  flex: 1 1 0%;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .main-content {
-  flex: 1;
-  padding: 2rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  /* clip, не auto: overflow-x:auto на същия елемент чупи position:sticky на таблици (Chrome). */
+  overflow-x: clip;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
+}
+
+/* Padding тук, не върху .main-content — иначе sticky thead остава под padding-а на scrollport-а */
+.main-content-inner {
+  padding: 2rem;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .layout-site-footer {
@@ -294,7 +315,7 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  .main-content {
+  .main-content-inner {
     padding: 1rem;
   }
 }

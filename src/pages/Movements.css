@@ -46,6 +46,9 @@
   background: var(--surface);
   border-radius: 0.75rem;
   box-shadow: var(--shadow);
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .movements-table {
