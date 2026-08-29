@@ -131,6 +131,15 @@
   color: var(--text-light);
 }
 
+.obligations-export-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+}
+
 .obligations-lines-panel {
   margin-bottom: 2rem;
   padding: 1.25rem 1.5rem;
@@ -172,6 +181,12 @@
 .obligations-obl-table-wrap {
   margin-top: 0.5rem;
   max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.obligations-obl-table-wrap .obligations-obl-table {
+  min-width: 44rem;
 }
 
 .obligations-obl-table {
@@ -223,6 +238,12 @@
 
 .payments-table-body-wrap {
   max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.payments-table-body-wrap .obligations-payments-table {
+  min-width: 40rem;
 }
 
 .obligations-payments-table-title {
@@ -634,6 +655,12 @@
 
 .obligations-summary-table-wrap {
   max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.obligations-summary-table-wrap .obligations-summary-table {
+  min-width: 44rem;
 }
 
 .obligations-summary-table {

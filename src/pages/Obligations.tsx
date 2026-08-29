@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase, supabaseQuery } from '../lib/supabase'
 import { loadDueByUnitMap } from '../lib/buildingUnitDues'
 import { useAuth } from '../contexts/AuthContext'
-import { Filter, Edit2, Plus, Trash2, History } from 'lucide-react'
+import { Filter, Edit2, Plus, Trash2, History, FileSpreadsheet } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { format } from 'date-fns'
 import bg from 'date-fns/locale/bg'
 import { useUnitGroups } from '../hooks/useUnitGroups'
@@ -901,6 +902,96 @@ export default function Obligations() {
     return Math.round(s * 100) / 100
   }, [isViewer, unitSummaryRows])
 
+  const exportActiveTabToExcel = () => {
+    const today = format(new Date(), 'yyyy-MM-dd')
+    const unitLabelFor = (unitId: string): { obj: string; owner: string } => {
+      const u = units.find((x) => x.id === unitId)
+      if (!u) return { obj: '—', owner: '' }
+      const obj = `${u.group?.name ?? labelForCode(u.type)} ${formatUnitNumberDisplay(u.number)}`.trim()
+      return { obj, owner: u.owner_name ?? '' }
+    }
+    const filterLabel =
+      filterUnit === 'all'
+        ? 'Всички'
+        : (() => {
+            const u = units.find((x) => x.id === filterUnit)
+            return u
+              ? `${u.group?.name ?? labelForCode(u.type)} ${formatUnitNumberDisplay(u.number)}`.trim()
+              : filterUnit
+          })()
+
+    let sheetName = 'Данни'
+    let rows: Record<string, string | number>[] = []
+    let colWidths: number[] = []
+
+    if (obligationsTab === 'summary') {
+      sheetName = 'Обобщение'
+      rows = unitSummaryRows.map(({ unit: u, totalOrig, totalRem, paid }) => {
+        const base: Record<string, string | number> = {
+          Обект: `${u.group?.name ?? labelForCode(u.type)} ${formatUnitNumberDisplay(u.number)}`.trim(),
+          Собственик: u.owner_name ?? '',
+        }
+        for (const col of periodOwedColumns) {
+          const v = remByUnitByPeriod[u.id]?.[col.key] ?? 0
+          base[col.label] = Math.round(v * 100) / 100
+        }
+        base['Начислено (€)'] = Math.round(totalOrig * 100) / 100
+        base['Платено (€)'] = Math.round(paid * 100) / 100
+        base['Остатък (€)'] = Math.round(totalRem * 100) / 100
+        return base
+      })
+      colWidths = [22, 24, ...periodOwedColumns.map(() => 12), 14, 14, 14]
+    } else if (obligationsTab === 'lines') {
+      sheetName = 'Редове задължения'
+      rows = filteredObligationLines.map((row) => {
+        const { obj, owner } = unitLabelFor(row.unit_id)
+        return {
+          Обект: obj,
+          Собственик: owner,
+          Период: row.periodName ?? (row.billing_period_id ? '—' : 'без период'),
+          Вид: kindLabels[row.kind] ?? row.kind,
+          Заглавие: row.title,
+          'Оригинал (€)': Math.round(row.amount_original * 100) / 100,
+          'Остатък (€)': Math.round(row.amount_remaining * 100) / 100,
+        }
+      })
+      colWidths = [22, 24, 18, 14, 30, 14, 14]
+    } else if (obligationsTab === 'payments') {
+      sheetName = 'Плащания'
+      rows = filteredPayments.map((payment) => {
+        const { obj, owner } = unitLabelFor(payment.unit_id)
+        const description = paymentDescriptionLine(payment)
+        const methodKey = payment.payment_method ?? ''
+        const method = paymentMethodLabels[methodKey] ?? ''
+        return {
+          Обект: obj,
+          Собственик: owner,
+          Описание: description,
+          'Начин на плащане': method,
+          'Сума (€)': Math.round(coercePaymentAmount(payment.amount) * 100) / 100,
+          'Дата на плащане': payment.payment_date
+            ? format(new Date(payment.payment_date), 'dd.MM.yyyy', { locale: bg })
+            : '',
+        }
+      })
+      colWidths = [22, 24, 40, 18, 12, 16]
+    }
+
+    if (rows.length === 0) {
+      alert('Няма редове за експортиране (провери филтъра или таба).')
+      return
+    }
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = colWidths.map((w) => ({ wch: w }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31))
+    const suffix = filterLabel === 'Всички' ? '' : `-${filterLabel}`
+    const safeSuffix = suffix.replace(/[\\/:*?"<>|]/g, '_')
+    const filename = `Задължения-${sheetName}${safeSuffix}-${today}.xlsx`
+    XLSX.writeFile(wb, filename)
+  }
+
   if (loading) {
     return <div>Зареждане...</div>
   }
@@ -983,6 +1074,15 @@ export default function Obligations() {
               : ''}
           </div>
         )}
+        <button
+          type="button"
+          className="btn-secondary obligations-export-btn"
+          onClick={exportActiveTabToExcel}
+          title="Експорт на видимата таблица в Excel (спазва избрания филтър)"
+        >
+          <FileSpreadsheet size={18} />
+          Експорт в Excel
+        </button>
       </div>
 
       {isViewer ? (
